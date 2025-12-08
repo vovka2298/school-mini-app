@@ -21,7 +21,7 @@ function saveData() {
 }
 
 // Валидация Telegram initData (замени BOT_TOKEN на свой)
-const BOT_TOKEN = '8203853124:AAHQmyBWNp1MdSR9B9bOMGbR8X1k6z6P08A'; // ← Замени!
+const BOT_TOKEN = '8203853124:AAHQmyBWNp1MdSR9B9bOMGbR8X1k6z6P08A';
 function validateInitData(initData) {
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
