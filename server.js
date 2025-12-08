@@ -13,15 +13,15 @@ let data = loadData();
 
 function loadData() {
   if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  return { users: {}, schedules: {}, admins: [] };
+  return { users: {}, schedules: {}, admins: ['913096324'] }; // Ты уже админ
 }
 
 function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// Валидация Telegram initData (замени BOT_TOKEN на свой)
-const BOT_TOKEN = '8203853124:AAHQmyBWNp1MdSR9B9bOMGbR8X1k6z6P08A';
+const BOT_TOKEN = '8203853124:AAHQmyBWNp1MdSR9B9bOMGbR8X1k6z6P08A'; // Твой токен
+
 function validateInitData(initData) {
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
@@ -35,7 +35,6 @@ function validateInitData(initData) {
   return JSON.parse(params.get('user'));
 }
 
-// API: Получить роль пользователя
 app.get('/api/user', (req, res) => {
   const initData = req.query.initData;
   const user = validateInitData(initData);
@@ -44,12 +43,12 @@ app.get('/api/user', (req, res) => {
   if (!data.users[tgId]) return res.json({ role: null });
   res.json({
     role: data.admins.includes(tgId) ? 'admin' : 'teacher',
-    name: data.users[tgId].name,
+    name: data.users[tgId].name || user.first_name || 'Пользователь',
+    photo: user.photo_url || '',
     tgId
   });
 });
 
-// API: Получить расписания
 app.get('/api/schedules', (req, res) => {
   const initData = req.query.initData;
   const user = validateInitData(initData);
@@ -60,7 +59,6 @@ app.get('/api/schedules', (req, res) => {
   res.json(isAdmin ? data.schedules : { [tgId]: data.schedules[tgId] || {} });
 });
 
-// API: Обновить расписание
 app.post('/api/schedule/:tgId', (req, res) => {
   const initData = req.query.initData;
   const user = validateInitData(initData);
@@ -75,7 +73,6 @@ app.post('/api/schedule/:tgId', (req, res) => {
   res.json({ success: true });
 });
 
-// API: Одобрить пользователя (от бота)
 app.post('/api/approve_user', (req, res) => {
   const { tgId, name, role } = req.body;
   data.users[tgId] = { name, role };
