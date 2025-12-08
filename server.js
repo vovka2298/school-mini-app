@@ -1,36 +1,17 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const fs = require('fs');
-const crypto = require('crypto');
-const path = require('path');
+const { Redis } = require('@upstash/redis');
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(express.static('public'));
 
-const DATA_FILE = path.join(__dirname, 'data.json');
-let data = { users: {}, schedules: {}, admins: [] };
-
-// Загружаем данные, если файл есть
-if (fs.existsSync(DATA_FILE)) {
-  try {
-    data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (e) {}
-}
-
-// ТЫ — ГЛАВНЫЙ АДМИН НАВСЕГДА
-if (!data.admins.includes("913096324")) {
-  data.admins.push("913096324");
-  data.users["913096324"] = { name: "Владимир", role: "admin" };
-  if (!data.schedules["913096324"]) data.schedules["913096324"] = {};
-  saveData();
-}
-
-function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: 'default', // не нужен при REST URL
+});
 
 const BOT_TOKEN = '8203853124:AAHQmyBWNp1MdSR9B9bOMGbR8X1k6z6P08A';
+const OWNER_ID = "913096324";
 
 function validateInitData(initData) {
   try {
@@ -40,66 +21,79 @@ function validateInitData(initData) {
     const sorted = Array.from(params.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}=${v}`).join('\n');
-    const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-    const calculated = crypto.createHmac('sha256', secret).update(sorted).digest('hex');
-    if (calculated !== hash) return null;
-    return JSON.parse(params.get('user'));
-  } catch (e) {
-    return null;
-  }
+    const secret = require('crypto').createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+    const calculated = require('crypto').createHmac('sha256', secret).update(sorted).digest('hex');
+    return calculated === hash ? JSON.parse(params.get('user')) : null;
+  } catch { return null; }
 }
 
-app.get('/api/user', (req, res) => {
+app.get('/api/user', async (req, res) => {
   const tgUser = validateInitData(req.query.initData || '');
   if (!tgUser) return res.status(401).json({ error: 'Invalid' });
 
   const id = tgUser.id.toString();
-  const userInfo = data.users[id];
+  const userData = await redis.hget('users', id);
 
-  if (!userInfo) return res.json({ role: null });
+  if (!userData) return res.json({ role: null });
+
+  const isAdmin = (await redis.smembers('admins')).includes(id);
 
   res.json({
-    role: data.admins.includes(id) ? 'admin' : 'teacher',
-    name: userInfo.name || tgUser.first_name,
+    role: isAdmin ? 'admin' : 'teacher',
+    name: userData.name || tgUser.first_name,
     photo: tgUser.photo_url || '',
     tgId: id
   });
 });
 
-app.get('/api/schedules', (req, res) => {
+app.get('/api/schedules', async (req, res) => {
   const tgUser = validateInitData(req.query.initData || '');
   if (!tgUser) return res.status(401).json({ error: 'Invalid' });
 
   const id = tgUser.id.toString();
-  if (!data.users[id]) return res.status(403).json({ error: 'No access' });
+  const exists = await redis.hexists('users', id);
+  if (!exists) return res.status(403).json({ error: 'No access' });
 
-  const isAdmin = data.admins.includes(id);
-  res.json(isAdmin ? data.schedules : { [id]: data.schedules[id] || {} });
+  const isAdmin = (await redis.smembers('admins')).includes(id);
+  if (isAdmin) {
+    const all = await redis.hgetall('schedules');
+    res.json(all || {});
+  } else {
+    const sched = await redis.hget('schedules', id);
+    res.json({ [id]: sched || {} });
+  }
 });
 
-app.post('/api/schedule/:tgId', (req, res) => {
+app.post('/api/schedule/:tgId', async (req, res) => {
   const tgUser = validateInitData(req.query.initData || '');
   if (!tgUser) return res.status(401).json({ error: 'Invalid' });
 
   const currentId = tgUser.id.toString();
   const targetId = req.params.tgId;
-  const isAdmin = data.admins.includes(currentId);
+  const isAdmin = (await redis.smembers('admins')).includes(currentId);
 
   if (!isAdmin && currentId !== targetId) return res.status(403).json({ error: 'Forbidden' });
 
-  if (!data.schedules[targetId]) data.schedules[targetId] = {};
-  Object.assign(data.schedules[targetId], req.body);
-  saveData();
+  await redis.hset('schedules', targetId, req.body);
   res.json({ success: true });
 });
 
-app.post('/api/approve_user', (req, res) => {
+app.post('/api/approve_user', async (req, res) => {
   const { tgId, name, role } = req.body;
-  data.users[tgId] = { name, role };
-  if (role === 'admin' && !data.admins.includes(tgId)) data.admins.push(tgId);
-  if (!data.schedules[tgId]) data.schedules[tgId] = {};
-  saveData();
+  await redis.hset('users', tgId, { name, role });
+  if (role === 'admin') await redis.sadd('admins', tgId);
+  await redis.hset('schedules', tgId, {});
   res.json({ success: true });
 });
 
-app.listen(process.env.PORT || 3000, () => console.log('Server running'));
+// Добавляем тебя как владельца при первом запуске
+(async () => {
+  const isAdmin = (await redis.smembers('admins')).includes(OWNER_ID);
+  if (!isAdmin) {
+    await redis.hset('users', OWNER_ID, { name: "Владимир", role: "admin" });
+    await redis.sadd('admins', OWNER_ID);
+    await redis.hset('schedules', OWNER_ID, {});
+  }
+})();
+
+app.listen(process.env.PORT || 3000);
