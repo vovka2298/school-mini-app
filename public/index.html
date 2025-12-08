@@ -8,24 +8,26 @@
   <style>
     body{margin:0;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
     .header{background:#161b22;padding:16px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #30363d}
-    .avatar{width:50px;height:50px;border-radius:50%;border:3px solid #58a6ff}
-    .user-info h3{margin:0;font-size:18px;font-weight:600}
+    .avatar{width:52px;height:52px;border-radius:50%;border:3px solid #58a6ff;object-fit:cover}
+    .user-info h3{margin:0;font-size:19px;font-weight:600}
     .user-info p{margin:4px 0 0;font-size:14px;color:#58a6ff}
     .tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d}
-    .tab{flex:1;padding:16px;text-align:center;font-weight:600;cursor:pointer;transition:.2s}
+    .tab{flex:1;padding:16px;text-align:center;font-weight:600;cursor:pointer}
     .tab.active{background:#1f6feb;color:white}
-    .legend{padding:12px;text-align:center;font-size:13px;background:#161b22;color:#8b949e;border-bottom:1px solid #30363d}
-    .grid{padding:12px;overflow-y:auto;height:calc(100vh - 220px)}
+    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:20px;font-size:13px;align-items:center}
+    .legend-item{display:flex;align-items:center;gap:8px}
+    .legend-box{width:16px;height:16px;border-radius:6px}
+    .grid{padding:12px;overflow-y:auto;height:calc(100vh - 235px)}
     .week-header{display:flex;margin-left:68px;margin-bottom:8px;font-size:12px;color:#8b949e}
     .day-name{flex:1;text-align:center;max-width:80px}
     .time-row{display:flex;align-items:center;margin:3px 0}
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px}
     .slots{display:flex;flex:1}
-    .slot{flex:1;max-width:80px;height:48px;margin:0 4px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:all .3s;position:relative;overflow:hidden}
+    .slot{flex:1;max-width:80px;height:50px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:bold;cursor:pointer;transition:all .3s}
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
-    .slot-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);white-space:nowrap}
+    .slot-time{font-size:9px;opacity:0.8}
   </style>
 </head>
 <body>
@@ -44,7 +46,9 @@
   </div>
 
   <div class="legend">
-    Не работаю Свободен Занят
+    <div class="legend-item"><div class="legend-box" style="background:#21262d"></div>Не работаю</div>
+    <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Свободен</div>
+    <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
 
   <div class="grid" id="content"></div>
@@ -69,7 +73,7 @@
     async function init(){
       try{
         const u = await fetch('/api/user').then(r=>r.json());
-        if(!u.role) return location.reload(); // вместо alert — просто перезагрузка
+        if(!u.role) return setTimeout(init, 1000); // авто-повтор без alert
         user = u;
         document.getElementById('userName').textContent = u.name;
         if(u.photo) document.getElementById('avatar').src = u.photo;
@@ -78,7 +82,7 @@
         schedule = s[u.tgId] || {};
         showTab('schedule');
       }catch(e){
-        setTimeout(init, 1000); // авто-повтор при ошибке сети
+        setTimeout(init, 1000);
       }
     }
 
@@ -86,8 +90,8 @@
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
       event.target.classList.add('active');
       if(tab==='schedule') renderSchedule();
-      else if(tab==='bookings') document.getElementById('content').innerHTML='<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут здесь</p>';
-      else document.getElementById('content').innerHTML='<p style="text-align:center;padding:60px;color:#8b949e">Настройки предметов</p>';
+      else if(tab==='bookings') document.getElementById('content').innerHTML='<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут доступны</p>';
+      else document.getElementById('content').innerHTML='<p style="text-align:center;padding:60px;color:#8b949e">Настройки предметов и цен</p>';
     }
 
     function renderSchedule(){
@@ -99,9 +103,10 @@
         html += `<div class="time-row"><div class="time-label">${time}</div><div class="slots">`;
         DAYS.forEach((_,i)=>{
           const day = FULL_DAYS[i];
-          const state = (schedule[day] && schedule[day][time]) || 0;
+          const state = (schedule[day]?.[time]) ?? 0;
           html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}')">
-                     <span class="slot-text">${TEXTS[state]}</span>
+                     <div class="slot-time">${time}</div>
+                     <div>${TEXTS[state]}</div>
                    </div>`;
         });
         html += '</div></div>';
@@ -111,7 +116,7 @@
 
     async function toggle(day,time){
       if(!schedule[day]) schedule[day] = {};
-      const current = schedule[day][time] || 0;
+      const current = schedule[day][time] ?? 0;
       schedule[day][time] = (current + 1) % 3;
 
       await fetch(`/api/schedule/${user.tgId}`,{
