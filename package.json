@@ -1,6 +1,7 @@
 {
   "name": "school-mini-app",
   "version": "1.0.0",
+  "description": "Кабинет расписания для преподавателей",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +11,8 @@
     "express": "^4.21.0"
   },
   "engines": {
-    "node": "18.x"
-  }
+    "node": "20.x"
+  },
+  "author": "Владимир",
+  "license": "MIT"
 }
