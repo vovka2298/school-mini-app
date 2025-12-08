@@ -6,29 +6,43 @@
   <title>Кабинет расписания</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin:0; background:#f5f5f5; padding:0; }
-    .header { background:#2481cc; color:white; padding:15px; text-align:center; font-size:20px; font-weight:bold; }
-    .teacher-select { padding:15px; background:white; margin:10px; border-radius:8px; }
-    .teacher-btn { padding:10px 15px; margin:5px; background:#e7f3ff; border:1px solid #2481cc; border-radius:8px; cursor:pointer; display:inline-block; }
-    .teacher-btn:hover { background:#d0e7ff; }
-    .tabs { display:flex; overflow-x:auto; background:white; border-bottom:1px solid #ddd; padding:0; margin:0; }
-    .tab { padding:15px 10px; min-width:60px; text-align:center; cursor:pointer; border-bottom:2px solid transparent; }
-    .tab.active { border-bottom-color:#2481cc; font-weight:bold; }
-    .grid { padding:10px; display:grid; gap:8px; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
-    .slot { padding:12px 8px; text-align:center; border-radius:12px; font-size:13px; border:2px solid #ddd; cursor:pointer; transition: all 0.2s; }
-    .state-0 { background:#ffffff; color:#333; }
-    .state-1 { background:#d4edda; border-color:#c3e6cb; color:#155724; }
-    .state-2 { background:#fff3cd; border-color:#ffeaa7; color:#856404; }
-    .legend { padding:10px; text-align:center; font-size:12px; color:#666; background:white; margin:10px; border-radius:8px; }
-    #error { padding:10px; background:#f8d7da; color:#721c24; text-align:center; display:none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin:0; background:#0a0a0a; color:#fff; }
+    .header { background:#1a1a1a; padding:15px; display:flex; align-items:center; border-bottom:1px solid #333; }
+    .avatar { width:40px; height:40px; border-radius:50%; margin-right:10px; }
+    .user-info { flex:1; }
+    .user-name { font-weight:bold; font-size:16px; }
+    .tabs { display:flex; background:#1a1a1a; border-bottom:1px solid #333; }
+    .tab { padding:15px; flex:1; text-align:center; cursor:pointer; }
+    .tab.active { background:#333; }
+    .grid { padding:15px; overflow:auto; }
+    .time-slot { display:flex; align-items:center; margin-bottom:2px; font-size:12px; }
+    .time-label { width:60px; min-width:60px; text-align:right; color:#aaa; }
+    .day-slots { display:flex; flex:1; }
+    .slot { width:80px; height:30px; margin:0 1px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:11px; cursor:pointer; transition:all 0.2s; border:1px solid #333; }
+    .state-0 { background:#333; color:#aaa; } /* Не работаю */
+    .state-1 { background:#4caf50; color:#fff; } /* Свободен */
+    .state-2 { background:#ffeb3b; color:#000; } /* Занят */
+    .legend { padding:10px; text-align:center; font-size:12px; color:#aaa; background:#1a1a1a; }
+    #error { padding:10px; background:#f44336; color:#fff; text-align:center; display:none; }
+    .teacher-select { padding:15px; background:#1a1a1a; }
+    .teacher-btn { padding:10px; margin:5px; background:#333; border-radius:8px; cursor:pointer; }
   </style>
 </head>
 <body>
-  <div class="header" id="header">Загрузка...</div>
+  <div class="header">
+    <img class="avatar" id="avatar" src="" alt="">
+    <div class="user-info">
+      <div class="user-name" id="userName">Загрузка...</div>
+    </div>
+  </div>
   <div id="error"></div>
   <div class="teacher-select" id="teacherSelect" style="display:none;"></div>
-  <div class="tabs" id="tabs"></div>
-  <div class="grid" id="grid"></div>
+  <div class="tabs" id="tabs">
+    <div class="tab active" onclick="switchTab('schedule')">Расписание</div>
+    <div class="tab" onclick="switchTab('requests')">Мои заявки</div>
+    <div class="tab" onclick="switchTab('subjects')">Предметы</div>
+  </div>
+  <div class="grid" id="content"></div>
   <div class="legend">⚪ Не работаю | 🟢 Свободен | 🟡 Занят</div>
 
   <script>
@@ -47,7 +61,7 @@
     let user = null;
     let schedules = {};
     let currentTeacherTgId = null;
-    let currentDay = 0;
+    let currentTab = 'schedule';
 
     async function init() {
       try {
@@ -57,7 +71,8 @@
           showError('Доступ запрещён. Обратитесь к администратору.');
           return;
         }
-        document.getElementById('header').textContent = `Кабинет: ${user.name}`;
+        document.getElementById('userName').textContent = user.name;
+        if (user.photo) document.getElementById('avatar').src = user.photo;
 
         const schedRes = await fetch(`/api/schedules?initData=${encodeURIComponent(initData)}`);
         schedules = await schedRes.json();
@@ -68,9 +83,8 @@
         } else {
           currentTeacherTgId = user.tgId;
           initScheduleIfEmpty();
-          renderTabs();
-          renderGrid();
         }
+        renderContent();
       } catch (e) {
         showError('Ошибка загрузки. Проверьте соединение.');
       }
@@ -103,49 +117,52 @@
     function selectTeacher(tgId) {
       currentTeacherTgId = tgId;
       initScheduleIfEmpty();
-      renderTabs();
-      renderGrid();
+      renderContent();
     }
 
-    function renderTabs() {
-      const tabs = document.getElementById('tabs');
-      tabs.innerHTML = DAYS.map((d, i) => 
-        `<div class="tab ${i === currentDay ? 'active' : ''}" onclick="switchDay(${i})">${d}</div>`
-      ).join('');
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      renderContent();
     }
 
-    function switchDay(day) {
-      currentDay = day;
-      renderTabs();
-      renderGrid();
+    function renderContent() {
+      const content = document.getElementById('content');
+      if (currentTab === 'schedule') {
+        renderSchedule();
+      } else if (currentTab === 'requests') {
+        content.innerHTML = '<p>Заявки на бронирование (пока заглушка).</p>'; // Доработай позже
+      } else if (currentTab === 'subjects') {
+        content.innerHTML = '<p>Предметы и цены (пока заглушка).</p>'; // Доработай позже
+      }
     }
 
-    function renderGrid() {
-      const dayName = FULL_DAYS[currentDay];
-      const daySchedule = schedules[currentTeacherTgId]?.[dayName] || {};
-      const grid = document.getElementById('grid');
-      grid.innerHTML = SLOTS.map(slot => {
-        const state = daySchedule[slot] || 0;
-        const texts = ['⚪ Не работаю', '🟢 Свободен', '🟡 Занят'];
-        const cls = `slot state-${state}`;
-        return `<div class="$$ {cls}" onclick="toggleSlot(' $${slot}')">
-          <div><b>${slot}</b></div>
-          <div style="font-size:11px;">${texts[state]}</div>
-        </div>`;
+    function renderSchedule() {
+      const content = document.getElementById('content');
+      content.innerHTML = SLOTS.map(slot => {
+        const row = `<div class="time-slot">
+          <div class="time-label">${slot}</div>
+          <div class="day-slots">`;
+        const daysHtml = DAYS.map((day, i) => {
+          const dayName = FULL_DAYS[i];
+          const state = schedules[currentTeacherTgId]?.[dayName]?.[slot] || 0;
+          return `<div class="slot state-${state}" onclick="toggleSlot('${dayName}', '${slot}')"></div>`;
+        }).join('');
+        return row + daysHtml + '</div></div>';
       }).join('');
     }
 
-    async function toggleSlot(slot) {
-      const dayName = FULL_DAYS[currentDay];
-      const daySchedule = schedules[currentTeacherTgId][dayName] || {};
+    async function toggleSlot(day, slot) {
+      const daySchedule = schedules[currentTeacherTgId][day] || {};
       const newState = (daySchedule[slot] || 0 + 1) % 3;
       daySchedule[slot] = newState;
       await fetch(`/api/schedule/${currentTeacherTgId}?initData=${encodeURIComponent(initData)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [dayName]: daySchedule })
+        body: JSON.stringify({ [day]: daySchedule })
       });
-      renderGrid();
+      renderSchedule();
     }
 
     async function saveSchedule() {
