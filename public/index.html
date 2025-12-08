@@ -24,16 +24,17 @@
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px}
     .slots{display:flex;flex:1}
     .slot{
-      flex:1;max-width:80px;height:50px;margin:0 4px;border-radius:12px;
+      flex:1;max-width:80px;height:56px;margin:0 4px;border-radius:12px;
       display:flex;flex-direction:column;align-items:center;justify-content:center;
-      font-size:10px;font-weight:bold;cursor:pointer;transition:all .3s;
+      font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;
       position:relative;overflow:hidden;box-sizing:border-box;
+      min-width:0; /* Критически важно — убирает прыжки */
     }
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
-    .slot-time{font-size:9px;opacity:0.8;margin-bottom:2px}
-    .slot-text{line-height:1.2}
+    .slot-time{font-size:9px;opacity:0.8;margin-bottom:3px}
+    .slot-text{line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center;padding:0 4px}
   </style>
 </head>
 <body>
@@ -75,6 +76,7 @@
 
     let user = null;
     let schedule = {};
+    let isToggling = false; // Блокировка быстрых кликов
 
     async function init(){
       try{
@@ -110,7 +112,7 @@
         DAYS.forEach((_,i)=>{
           const day = FULL_DAYS[i];
           const state = (schedule[day]?.[time]) ?? 0;
-          html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}')">
+          html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}',this)">
                      <div class="slot-time">${time}</div>
                      <div class="slot-text">${TEXTS[state]}</div>
                    </div>`;
@@ -120,17 +122,28 @@
       document.getElementById('content').innerHTML = html;
     }
 
-    async function toggle(day,time){
+    async function toggle(day,time,element){
+      if(isToggling) return; // Блокируем повторные клики
+      isToggling = true;
+
       if(!schedule[day]) schedule[day] = {};
       const current = schedule[day][time] ?? 0;
-      schedule[day][time] = (current + 1) % 3;
+      const next = (current + 1) % 3;
+      schedule[day][time] = next;
 
-      await fetch(`/api/schedule/${user.tgId}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({[day]:schedule[day]})
-      });
-      renderSchedule();
+      // Мгновенно обновляем кнопку
+      element.className = `slot state-${next}`;
+      element.querySelector('.slot-text').textContent = TEXTS[next];
+
+      try{
+        await fetch(`/api/schedule/${user.tgId}`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({[day]:schedule[day]})
+        });
+      }catch(e){}
+
+      isToggling = false;
     }
 
     init();
