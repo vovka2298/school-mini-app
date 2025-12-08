@@ -1,0 +1,27 @@
+<div class="subjects">
+  <h2>Мои предметы</h2>
+  <p>Выберите теги предметов, которые вы преподаете</p>
+  <div class="subjects-block">
+    <div class="checkbox-grid" id="subjectsList"></div>
+
+    <div class="gender">
+      <p style="margin:20px 0 10px">Укажите ваш пол</p>
+      <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
+      <label style="margin-left:20px"><input type="radio" name="gender" value="Женский"> Женский</label>
+    </div>
+
+    <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
+  </div>
+</div>
+
+<style>
+  .subjects h2{font-size:20px;margin-bottom:10px}
+  .subjects p{font-size:14px;color:#8b949e;margin-bottom:20px}
+  .subjects-block{background:#161b22;border-radius:12px;padding:20px}
+  .checkbox-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+  .checkbox-item{display:flex;align-items:center;gap:12px;font-size:15px;cursor:pointer}
+  .checkbox-item input{transform:scale(1.4)}
+  .gender label{font-size:15px}
+  .save-btn{background:#1f6feb;color:white;border:none;padding:16px;border-radius:12px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
+  .save-btn:hover{background:#1565c0}
+</style>
