@@ -18,20 +18,12 @@
     .legend-item{display:flex;align-items:center;gap:8px}
     .legend-box{width:16px;height:16px;border-radius:6px}
     .grid{padding:12px;overflow-y:auto;height:calc(100vh - 235px)}
-    
-    /* Ключевое выравнивание */
     .week-header{display:flex;margin-left:68px;margin-bottom:8px;font-size:12px;color:#8b949e}
-    .day-name{width:88px;text-align:center;flex:none} /* 80px кнопка + 4px margin с каждой стороны */
-    
+    .day-name{width:88px;text-align:center;flex:none}
     .time-row{display:flex;align-items:center;margin:3px 0}
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px;flex:none}
     .slots{display:flex;flex:1}
-    .slot{
-      width:80px;height:56px;margin:0 4px;border-radius:12px;
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;
-      flex:none;box-sizing:border-box;overflow:hidden;
-    }
+    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;flex:none;box-sizing:border-box;overflow:hidden}
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
@@ -55,9 +47,9 @@
   </div>
 
   <div class="legend">
-    <div class="legend-item"><div class="legend-box" style="background:#21262d"></div>Не работаю</div>
-    <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Свободен</div>
-    <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
+    <div class="legend-item">Не работаю</div>
+    <div class="legend-item">Свободен</div>
+    <div class="legend-item">Занят</div>
   </div>
 
   <div class="grid" id="content"></div>
@@ -78,7 +70,6 @@
 
     let user = null;
     let schedule = {};
-    let isToggling = false;
 
     async function init(){
       try{
@@ -96,12 +87,23 @@
       }
     }
 
+    const content = document.getElementById('content');
+
     function showTab(tab){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
       event.target.classList.add('active');
+      
       if(tab==='schedule') renderSchedule();
-      else if(tab==='bookings') document.getElementById('content').innerHTML='<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут доступны</p>';
-      else document.getElementById('content').innerHTML='<p style="text-align:center;padding:60px;color:#8b949e">Настройки предметов и цен</p>';
+      else if(tab==='bookings') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут доступны</p>';
+      else if(tab==='subjects'){
+        fetch('subjects.html').then(r=>r.text()).then(html=>{
+          content.innerHTML = html;
+          const script = document.createElement('script');
+          script.src = 'js/subjects.js';
+          script.onload = () => loadProfile();
+          document.body.appendChild(script);
+        });
+      }
     }
 
     function renderSchedule(){
@@ -121,13 +123,10 @@
         });
         html += '</div></div>';
       });
-      document.getElementById('content').innerHTML = html;
+      content.innerHTML = html;
     }
 
     async function toggle(day,time,element){
-      if(isToggling) return;
-      isToggling = true;
-
       if(!schedule[day]) schedule[day] = {};
       const current = schedule[day][time] ?? 0;
       const next = (current + 1) % 3;
@@ -136,15 +135,11 @@
       element.className = `slot state-${next}`;
       element.querySelector('.slot-text').textContent = TEXTS[next];
 
-      try{
-        await fetch(`/api/schedule/${user.tgId}`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({[day]:schedule[day]})
-        });
-      }catch(e){}
-
-      isToggling = false;
+      await fetch(`/api/schedule/${user.tgId}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({[day]:schedule[day]})
+      });
     }
 
     init();
