@@ -3,162 +3,77 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Кабинет расписания</title>
+  <title>Расписание</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin:0; background:#0a0a0a; color:#fff; overflow:hidden; }
-    .header { background:#1a1a1a; padding:15px; display:flex; align-items:center; border-bottom:1px solid #333; }
-    .avatar { width:40px; height:40px; border-radius:50%; margin-right:10px; background:#333; }
-    .user-info { flex:1; }
-    .user-name { font-size:18px; font-weight:bold; }
-    .tabs { display:flex; background:#1a1a1a; border-bottom:1px solid #333; }
-    .tab { flex:1; padding:15px; text-align:center; cursor:pointer; }
-    .tab.active { background:#333; font-weight:bold; }
-    .grid { padding:10px; height:calc(100vh - 200px); overflow:auto; }
-    .week-header { display:flex; margin-left:60px; }
-    .day { width:80px; text-align:center; font-size:13px; color:#aaa; padding-bottom:5px; }
-    .time-row { display:flex; align-items:center; margin-bottom:1px; }
-    .time { width:60px; text-align:right; color:#aaa; font-size:12px; padding-right:5px; }
-    .slots { display:flex; flex:1; }
-    .slot { flex:1; height:30px; margin:0 1px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:11px; cursor:pointer; transition:all 0.2s; }
-    .state-0 { background:#333; color:#888; }
-    .state-1 { background:#4caf50; color:#fff; }
-    .state-2 { background:#ffeb3b; color:#000; }
-    .legend { padding:10px; text-align:center; font-size:12px; color:#888; background:#1a1a1a; border-top:1px solid #333; }
-    #error { padding:10px; background:#f44336; text-align:center; display:none; }
-    .teacher-select { padding:10px; background:#1a1a1a; display:none; }
-    .teacher-btn { margin:5px; padding:8px 12px; background:#333; border-radius:6px; cursor:pointer; }
+    body { margin:0; background:#000; color:#fff; font-family:Arial; }
+    .header { background:#111; padding:15px; text-align:center; font-size:18px; }
+    .tabs { display:flex; background:#222; }
+    .tab { flex:1; padding:15px; text-align:center; background:#333; }
+    .tab.active { background:#2481cc; }
+    .grid { padding:10px; }
+    .row { display:flex; margin:2px 0; }
+    .time { width:60px; font-size:12px; color:#aaa; }
+    .days { display:flex; flex:1; }
+    .slot { flex:1; height:40px; margin:0 2px; background:#333; border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+    .free { background:#0f0 !important; }
+    .busy { background:#ff0 !important; color:#000; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <img class="avatar" id="avatar" src="" alt="">
-    <div class="user-info">
-      <div class="user-name" id="userName">Загрузка...</div>
-    </div>
-  </div>
-  <div id="error"></div>
-  <div class="teacher-select" id="teacherSelect"></div>
+  <div class="header" id="name">Загрузка...</div>
   <div class="tabs">
-    <div class="tab active" onclick="switchTab(0)">Расписание</div>
-    <div class="tab" onclick="switchTab(1)">Мои заявки</div>
-    <div class="tab" onclick="switchTab(2)">Предметы</div>
+    <div class="tab active" onclick="tab=0;render()">Расписание</div>
+    <div class="tab" onclick="tab=1;render()">Заявки</div>
+    <div class="tab" onclick="tab=2;render()">Предметы</div>
   </div>
   <div class="grid" id="grid"></div>
-  <div class="legend">⚪ Не работаю 🟢 Свободен 🟡 Занят</div>
 
   <script>
-    Telegram.WebApp.ready();
-    Telegram.WebApp.expand();
-    const initData = Telegram.WebApp.initData;
-
-    const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-    const FULL_DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
-    const SLOTS = [];
-    for (let h = 8; h <= 22; h++) {
-      SLOTS.push(`${h.toString().padStart(2, '0')}:00`);
-      SLOTS.push(`${h.toString().padStart(2, '0')}:30`);
+    let me = null;
+    let all = {};
+    let tab = 0;
+    const days = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+    const times = [];
+    for(let h=8;h<=22;h++) {
+      times.push(h+":00");
+      if(h<22) times.push(h+":30");
     }
-    SLOTS.pop(); // Убираем лишние 22:30 если не нужно
-
-    let user = null;
-    let schedules = {};
-    let currentTeacherTgId = null;
-    let currentTab = 0;
 
     async function init() {
       try {
-        const res = await fetch(`/api/user?initData=${encodeURIComponent(initData)}`);
-        user = await res.json();
-        if (!user.role) {
-          showError('Доступ запрещён');
-          return;
-        }
-        document.getElementById('userName').textContent = user.name;
-        if (user.photo) document.getElementById('avatar').src = user.photo;
-
-        const schedRes = await fetch(`/api/schedules?initData=${encodeURIComponent(initData)}`);
-        schedules = await schedRes.json();
-
-        if (user.role === 'admin') {
-          document.getElementById('teacherSelect').style.display = 'block';
-          renderTeachers();
-        } else {
-          currentTeacherTgId = user.tgId;
-          initScheduleIfEmpty();
-          renderGrid();
-        }
-      } catch (e) {
-        showError('Ошибка загрузки. Проверьте интернет.');
-      }
+        const u = await fetch('/api/user').then(r=>r.json());
+        if(!u.role) return alert("Доступ запрещён");
+        me = u;
+        document.getElementById('name').innerText = u.name;
+        all = await fetch('/api/schedules').then(r=>r.json());
+        render();
+      } catch { alert("Ошибка сети"); }
     }
 
-    function showError(msg) {
-      document.getElementById('error').textContent = msg;
-      document.getElementById('error').style.display = 'block';
-    }
-
-    function initScheduleIfEmpty() {
-      if (!schedules[currentTeacherTgId]) {
-        schedules[currentTeacherTgId] = {};
-        FULL_DAYS.forEach(day => {
-          schedules[currentTeacherTgId][day] = {};
-          SLOTS.forEach(slot => schedules[currentTeacherTgId][day][slot] = 0);
+    function render() {
+      if(tab!==0) { document.getElementById('grid').innerHTML="<p style='text-align:center;padding:50px'>В разработке</p>"; return; }
+      let html = '';
+      times.forEach(t => {
+        html += `<div class="row"><div class="time">${t}</div><div class="days">`;
+        days.forEach(d => {
+          const dayKey = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"][days.indexOf(d)];
+          const state = all[me.tgId]?.[dayKey]?.[t] || 0;
+          const cls = state===1 ? 'free' : state===2 ? 'busy' : '';
+          html += `<div class="slot ${cls}" onclick="toggle('${dayKey}','${t}')"></div>`;
         });
-      }
-    }
-
-    function renderTeachers() {
-      const div = document.getElementById('teacherSelect');
-      div.innerHTML = '<b>Преподаватели:</b><br>';
-      Object.keys(schedules).forEach(tgId => {
-        if (tgId !== user.tgId) {
-          const name = schedules[tgId].name || 'Препод ' + tgId;
-          div.innerHTML += `<button class="teacher-btn" onclick="selectTeacher('${tgId}')">${name}</button>`;
-        }
+        html += '</div></div>';
       });
-    }
-
-    function selectTeacher(tgId) {
-      currentTeacherTgId = tgId;
-      initScheduleIfEmpty();
-      renderGrid();
-    }
-
-    function switchTab(tab) {
-      currentTab = tab;
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab')[tab].classList.add('active');
-      renderGrid();
-    }
-
-    function renderGrid() {
-      if (currentTab !== 0) {
-        document.getElementById('grid').innerHTML = '<p style="text-align:center; padding:20px;">Вкладка в разработке</p>';
-        return;
-      }
-      let html = '<div class="week-header">' + DAYS.map(d => `<div class="day">${d}</div>`).join('') + '</div>';
-      html += SLOTS.map(slot => {
-        let row = `<div class="time-row"><div class="time">${slot}</div><div class="slots">`;
-        row += DAYS.map((_, i) => {
-          const day = FULL_DAYS[i];
-          const state = schedules[currentTeacherTgId]?.[day]?.[slot] || 0;
-          return `<div class="slot state-${state}" onclick="toggle('${day}', '${slot}')"></div>`;
-        }).join('');
-        return row + '</div></div>';
-      }).join('');
       document.getElementById('grid').innerHTML = html;
     }
 
-    async function toggle(day, slot) {
-      const state = schedules[currentTeacherTgId][day][slot] || 0;
-      schedules[currentTeacherTgId][day][slot] = (state + 1) % 3;
-      await fetch(`/api/schedule/${currentTeacherTgId}?initData=${encodeURIComponent(initData)}`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(schedules[currentTeacherTgId])
-      });
-      renderGrid();
+    async function toggle(day, time) {
+      const current = all[me.tgId]?.[day]?.[time] || 0;
+      const next = (current + 1) % 3;
+      const update = { [day]: { ...all[me.tgId][day], [time]: next } };
+      await fetch(`/api/schedule/${me.tgId}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(update)});
+      all[me.tgId] = { ...all[me.tgId], ...update };
+      render();
     }
 
     init();
