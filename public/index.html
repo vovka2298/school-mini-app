@@ -14,7 +14,7 @@
     .tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d}
     .tab{flex:1;padding:16px;text-align:center;font-weight:600;cursor:pointer}
     .tab.active{background:#1f6feb;color:white}
-    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:20px;font-size:13px;align-items:center}
+    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:24px;font-size:13px;align-items:center}
     .legend-item{display:flex;align-items:center;gap:8px}
     .legend-box{width:16px;height:16px;border-radius:6px}
     .grid{padding:12px;overflow-y:auto;height:calc(100vh - 235px)}
@@ -23,11 +23,17 @@
     .time-row{display:flex;align-items:center;margin:3px 0}
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px}
     .slots{display:flex;flex:1}
-    .slot{flex:1;max-width:80px;height:50px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:bold;cursor:pointer;transition:all .3s}
+    .slot{
+      flex:1;max-width:80px;height:50px;margin:0 4px;border-radius:12px;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-size:10px;font-weight:bold;cursor:pointer;transition:all .3s;
+      position:relative;overflow:hidden;box-sizing:border-box;
+    }
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
-    .slot-time{font-size:9px;opacity:0.8}
+    .slot-time{font-size:9px;opacity:0.8;margin-bottom:2px}
+    .slot-text{line-height:1.2}
   </style>
 </head>
 <body>
@@ -73,7 +79,7 @@
     async function init(){
       try{
         const u = await fetch('/api/user').then(r=>r.json());
-        if(!u.role) return setTimeout(init, 1000); // авто-повтор без alert
+        if(!u.role) return setTimeout(init, 1000);
         user = u;
         document.getElementById('userName').textContent = u.name;
         if(u.photo) document.getElementById('avatar').src = u.photo;
@@ -106,7 +112,7 @@
           const state = (schedule[day]?.[time]) ?? 0;
           html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}')">
                      <div class="slot-time">${time}</div>
-                     <div>${TEXTS[state]}</div>
+                     <div class="slot-text">${TEXTS[state]}</div>
                    </div>`;
         });
         html += '</div></div>';
