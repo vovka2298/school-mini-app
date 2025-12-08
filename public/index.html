@@ -3,77 +3,117 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Расписание</title>
+  <title>Кабинет преподавателя</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { margin:0; background:#000; color:#fff; font-family:Arial; }
-    .header { background:#111; padding:15px; text-align:center; font-size:18px; }
-    .tabs { display:flex; background:#222; }
-    .tab { flex:1; padding:15px; text-align:center; background:#333; }
-    .tab.active { background:#2481cc; }
-    .grid { padding:10px; }
-    .row { display:flex; margin:2px 0; }
-    .time { width:60px; font-size:12px; color:#aaa; }
-    .days { display:flex; flex:1; }
-    .slot { flex:1; height:40px; margin:0 2px; background:#333; border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-    .free { background:#0f0 !important; }
-    .busy { background:#ff0 !important; color:#000; }
+    body{margin:0;background:#111;color:#fff;font-family:system-ui,-apple-system,sans-serif}
+    .header{background:#1a1a1a;padding:15px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #333}
+    .avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid #2481cc}
+    .name{font-size:18px;font-weight:600}
+    .role{color:#2481cc;font-size:14px}
+    .tabs{display:flex;background:#1a1a1a;border-bottom:1px solid #333}
+    .tab{flex:1;padding:16px;text-align:center;font-weight:500;cursor:pointer}
+    .tab.active{background:#2481cc}
+    .legend{padding:12px;text-align:center;font-size:13px;background:#1a1a1a;color:#aaa}
+    .grid{padding:10px}
+    .week-header{display:flex;margin-left:70px;margin-bottom:8px;font-size:12px;color:#aaa}
+    .day-name{flex:1;text-align:center;max-width:80px}
+    .time-row{display:flex;align-items:center;margin:2px 0}
+    .time-label{width:70px;text-align:right;font-size:13px;color:#aaa;padding-right:10px}
+    .slots{display:flex;flex:1}
+    .slot{flex:1;max-width:80px;height:44px;margin:0 3px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:all .2s}
+    .state-0{background:#333;color:#999}
+    .state-1{background:#4caf50;color:white}
+    .state-2{background:#ff9800;color:white}
   </style>
 </head>
 <body>
-  <div class="header" id="name">Загрузка...</div>
-  <div class="tabs">
-    <div class="tab active" onclick="tab=0;render()">Расписание</div>
-    <div class="tab" onclick="tab=1;render()">Заявки</div>
-    <div class="tab" onclick="tab=2;render()">Предметы</div>
+  <div class="header">
+    <img class="avatar" id="avatar" src="" alt="Аватар">
+    <div>
+      <div class="name" id="userName">Загрузка...</div>
+      <div class="role">Кабинет преподавателя</div>
+    </div>
   </div>
-  <div class="grid" id="grid"></div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('schedule')">Расписание</div>
+    <div class="tab" onclick="showTab('bookings')">Мои заявки</div>
+    <div class="tab" onclick="showTab('subjects')">Предметы</div>
+  </div>
+
+  <div class="legend">
+    Не работаю Свободен Занят
+  </div>
+
+  <div class="grid" id="content"></div>
 
   <script>
-    let me = null;
-    let all = {};
-    let tab = 0;
-    const days = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
-    const times = [];
-    for(let h=8;h<=22;h++) {
-      times.push(h+":00");
-      if(h<22) times.push(h+":30");
+    Telegram.WebApp.ready();
+    Telegram.WebApp.expand();
+
+    const DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+    const FULL_DAYS = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
+    const TIMES = [];
+    for(let h=8;h<=22;h++){
+      TIMES.push(`${h.toString().padStart(2,'0')}:00`);
+      if(h<22) TIMES.push(`${h.toString().padStart(2,'0')}:30`);
     }
 
-    async function init() {
-      try {
+    let user = null;
+    let schedule = {};
+
+    async function init(){
+      try{
         const u = await fetch('/api/user').then(r=>r.json());
-        if(!u.role) return alert("Доступ запрещён");
-        me = u;
-        document.getElementById('name').innerText = u.name;
-        all = await fetch('/api/schedules').then(r=>r.json());
-        render();
-      } catch { alert("Ошибка сети"); }
+        if(!u.role) return alert('Доступ запрещён');
+        user = u;
+        document.getElementById('userName').textContent = u.name;
+        if(u.photo) document.getElementById('avatar').src = u.photo;
+
+        const s = await fetch('/api/schedules').then(r=>r.json());
+        schedule = s[u.tgId] || {};
+        showTab('schedule');
+      }catch{ alert('Ошибка загрузки'); }
     }
 
-    function render() {
-      if(tab!==0) { document.getElementById('grid').innerHTML="<p style='text-align:center;padding:50px'>В разработке</p>"; return; }
-      let html = '';
-      times.forEach(t => {
-        html += `<div class="row"><div class="time">${t}</div><div class="days">`;
-        days.forEach(d => {
-          const dayKey = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"][days.indexOf(d)];
-          const state = all[me.tgId]?.[dayKey]?.[t] || 0;
-          const cls = state===1 ? 'free' : state===2 ? 'busy' : '';
-          html += `<div class="slot ${cls}" onclick="toggle('${dayKey}','${t}')"></div>`;
+    function showTab(tab){
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      event.target.classList.add('active');
+      if(tab==='schedule') renderSchedule();
+      else if(tab==='bookings') document.getElementById('content').innerHTML='<p style="text-align:center;padding:50px;color:#888">Заявки скоро появятся</p>';
+      else document.getElementById('content').innerHTML='<p style="text-align:center;padding:50px;color:#888">Настройки предметов</p>';
+    }
+
+    function renderSchedule(){
+      let html = '<div class="week-header"><div></div>';
+      DAYS.forEach(d=>html+=`<div class="day-name">${d}</div>`);
+      html += '</div>';
+
+      TIMES.forEach(time=>{
+        html += `<div class="time-row"><div class="time-label">${time}</div><div class="slots">`;
+        DAYS.forEach((_,i)=>{
+          const day = FULL_DAYS[i];
+          const state = schedule[day]?.[time] || 0;
+          html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}')"></div>`;
         });
         html += '</div></div>';
       });
-      document.getElementById('grid').innerHTML = html;
+      document.getElementById('content').innerHTML = html;
     }
 
-    async function toggle(day, time) {
-      const current = all[me.tgId]?.[day]?.[time] || 0;
+    async function toggle(day,time){
+      const current = schedule[day]?.[time] || 0;
       const next = (current + 1) % 3;
-      const update = { [day]: { ...all[me.tgId][day], [time]: next } };
-      await fetch(`/api/schedule/${me.tgId}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(update)});
-      all[me.tgId] = { ...all[me.tgId], ...update };
-      render();
+      if(!schedule[day]) schedule[day] = {};
+      schedule[day][time] = next;
+
+      await fetch(`/api/schedule/${user.tgId}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({[day]:schedule[day]})
+      });
+      renderSchedule();
     }
 
     init();
