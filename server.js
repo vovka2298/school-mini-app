@@ -1,102 +1,109 @@
 const express = require('express');
+const { Redis } = require('@upstash/redis');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// === ДАННЫЕ В ПАМЯТИ ===
-let data = {
-  users: { "913096324": { name: "Владимир", role: "admin" } },
-  schedules: { "913096324": {} },
-  profiles: { "913096324": { subjects: [], gender: "Мужской" } },
-  admins: ["913096324"]
-};
+// Подключаемся к твоей базе Upstash
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: "default"
+});
 
-// Загружаем из файла при старте
-const DATA_FILE = path.join(__dirname, 'data.json');
-if (fs.existsSync(DATA_FILE)) {
-  try {
-    const loaded = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    data = { ...data, ...loaded };
-    if (!data.admins) data.admins = [];
-    if (!data.profiles) data.profiles = {};
-  } catch (e) {
-    console.log('Не удалось загрузить data.json');
+// === ДАННЫЕ ===
+let cache = { users: {}, schedules: {}, profiles: {}, admins: [] };
+
+async function load() {
+  const [u, s, p, a] = await Promise.all([
+    redis.get('data:users'),
+    redis.get('data:schedules'),
+    redis.get('data:profiles'),
+    redis.get('data:admins')
+  ]);
+  if (u) cache.users = u;
+  if (s) cache.schedules = s;
+  if (p) cache.profiles = p;
+  if (a) cache.admins = a || [];
+
+  // Ты — вечный админ
+  if (!cache.admins.includes("913096324")) {
+    cache.admins.push("913096324");
+    cache.users["913096324"] = { name: "Владимир", role: "admin" };
+    cache.schedules["913096324"] = {};
+    cache.profiles["913096324"] = { subjects: [], gender: "Мужской" };
+    await save();
   }
 }
 
-function saveData() {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.log('Не удалось сохранить data.json');
-  }
+async function save() {
+  await Promise.all([
+    redis.set('data:users', cache.users),
+    redis.set('data:schedules', cache.schedules),
+    redis.set('data:profiles', cache.profiles),
+    redis.set('data:admins', cache.admins)
+  ]);
 }
+
+load(); // Загружаем при старте
 
 // === API ===
-app.get('/api/user', (req, res) => {
-  // Для Telegram WebApp и браузера
-  const mockUser = { id: 913096324, first_name: "Владимир", photo_url: "" };
-  const id = mockUser.id.toString();
-  if (!data.users[id]) return res.json({ role: null });
+app.get('/api/user', async (req, res) => {
+  const id = "913096324";
+  const user = cache.users[id];
+  if (!user) return res.json({ role: null });
   res.json({
-    role: data.admins.includes(id) ? 'admin' : 'teacher',
-    name: data.users[id].name || "Владимир",
+    role: cache.admins.includes(id) ? 'admin' : 'teacher',
+    name: user.name,
     photo: "",
     tgId: id
   });
 });
 
-app.get('/api/schedules', (req, res) => {
+app.get('/api/schedules', async (req, res) => {
   const id = "913096324";
-  if (!data.users[id]) return res.status(403).send();
-  const isAdmin = data.admins.includes(id);
-  res.json(isAdmin ? data.schedules : { [id]: data.schedules[id] || {} });
+  if (!cache.users[id]) return res.status(403).send();
+  const isAdmin = cache.admins.includes(id);
+  res.json(isAdmin ? cache.schedules : { [id]: cache.schedules[id] || {} });
 });
 
-app.post('/api/schedule/:tgId', (req, res) => {
+app.post('/api/schedule/:tgId', async (req, res) => {
   const target = req.params.tgId;
   const curr = "913096324";
-  if (curr !== target && !data.admins.includes(curr)) return res.status(403).send();
-  if (!data.schedules[target]) data.schedules[target] = {};
-  Object.assign(data.schedules[target], req.body);
-  saveData();
+  if (curr !== target && !cache.admins.includes(curr)) return res.status(403).send();
+  if (!cache.schedules[target]) cache.schedules[target] = {};
+  Object.assign(cache.schedules[target], req.body);
+  await save();
   res.json({ ok: true });
 });
 
-app.get('/api/profile/:tgId', (req, res) => {
-  res.json(data.profiles?.[req.params.tgId] || { subjects: [], gender: "Мужской" });
+app.get('/api/profile/:tgId', async (req, res) => {
+  res.json(cache.profiles?.[req.params.tgId] || { subjects: [], gender: "Мужской" });
 });
 
-app.post('/api/profile/:tgId', (req, res) => {
+app.post('/api/profile/:tgId', async (req, res) => {
   const target = req.params.tgId;
   const curr = "913096324";
-  if (curr !== target && !data.admins.includes(curr)) return res.status(403).send();
-  if (!data.profiles) data.profiles = {};
-  data.profiles[target] = req.body;
-  saveData();
+  if (curr !== target && !cache.admins.includes(curr)) return res.status(403).send();
+  cache.profiles[target] = req.body;
+  await save();
   res.json({ ok: true });
 });
 
-app.post('/api/approve_user', (req, res) => {
+app.post('/api/approve_user', async (req, res) => {
   const { tgId, name, role } = req.body;
-  data.users[tgId] = { name, role };
-  if (role === 'admin') data.admins.push(tgId);
-  if (!data.schedules[tgId]) data.schedules[tgId] = {};
-  if (!data.profiles) data.profiles = {};
-  if (!data.profiles[tgId]) data.profiles[tgId] = { subjects: [], gender: "Мужской" };
-  saveData();
+  cache.users[tgId] = { name, role };
+  if (role === 'admin') cache.admins.push(tgId);
+  cache.schedules[tgId] = cache.schedules[tgId] || {};
+  cache.profiles[tgId] = cache.profiles[tgId] || { subjects: [], gender: "Мужской" };
+  await save();
   res.json({ ok: true });
 });
 
-// Все остальные маршруты — index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Сервер запущен на порту ${port}`);
-});
+app.listen(port, () => console.log('Запущено с Upstash Redis!'));
