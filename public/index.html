@@ -72,19 +72,30 @@
 
     async function init(){
       try{
-        const u = await fetch('/api/user').then(r=>r.json());
-        if(!u.role) return setTimeout(init, 1000); // пока нет роли — ждём одобрения админом
+        const u = await fetch('/api/user').then(r => {
+          if (!r.ok) throw new Error('User fetch failed');
+          return r.json();
+        });
+        if(!u.role) {
+          Telegram.WebApp.showAlert('Ваш аккаунт не одобрен админом. Подождите.');
+          return setTimeout(init, 5000); // retry
+        }
 
         user = u;
         document.getElementById('userName').textContent = u.name || "Преподаватель";
         if(u.photo) document.getElementById('avatar').src = u.photo;
 
-        const s = await fetch('/api/schedules').then(r=>r.json());
+        const s = await fetch('/api/schedules').then(r => {
+          if (!r.ok) throw new Error('Schedules fetch failed');
+          return r.json();
+        });
         schedule = s[u.tgId] || {};
-        renderSchedule(); // сразу открываем расписание
+        
+        showTab('schedule'); // Авто-открытие расписания при запуске
       }catch(e){
-        console.error(e);
-        setTimeout(init, 1000);
+        console.error('Init error:', e);
+        Telegram.WebApp.showAlert('Ошибка загрузки данных. Проверьте интернет и попробуйте позже.');
+        setTimeout(init, 3000); // retry on error
       }
     }
 
@@ -92,23 +103,27 @@
 
     function showTab(tab){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-      event.target.classList.add('active');
+      const activeTab = document.querySelector(`.tab[onclick="showTab('${tab}')"]`);
+      if (activeTab) activeTab.classList.add('active');
 
-      if(tab==='schedule'){
+      if(tab === 'schedule'){
         renderSchedule();
-      } else if(tab==='bookings'){
+      } else if(tab === 'bookings'){
         content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки учеников скоро будут здесь</p>';
-      } else if(tab==='subjects'){
-        // Загружаем отдельную страницу subjects.html и запускаем её скрипт
+      } else if(tab === 'subjects'){
+        // Загружаем subjects.html и subjects.js, с явным вызовом loadProfile
         fetch('subjects.html')
           .then(r => r.text())
           .then(html => {
             content.innerHTML = html;
-            // Подгружаем и запускаем subjects.js
             const script = document.createElement('script');
             script.src = '/js/subjects.js';
             script.onload = () => {
-              // subjects.js сам вызовет loadProfile() при DOMContentLoaded
+              if (typeof loadProfile === 'function') {
+                loadProfile(); // Явно вызываем, чтобы список появился сразу
+              } else {
+                console.error('loadProfile not found');
+              }
             };
             document.body.appendChild(script);
           })
@@ -140,7 +155,10 @@
     }
 
     async function toggle(day,time,element){
-      if(!user) return;
+      if(!user) {
+        Telegram.WebApp.showAlert('Пользователь не загружен. Подождите...');
+        return;
+      }
 
       if(!schedule[day]) schedule[day] = {};
       const current = schedule[day][time] ?? 0;
@@ -149,11 +167,21 @@
       element.className = `slot state-${next}`;
       element.querySelector('.slot-text').textContent = TEXTS[next];
 
-      await fetch(`/api/schedule/${user.tgId}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({[day]:schedule[day]})
-      });
+      try {
+        const response = await fetch(`/api/schedule/${user.tgId}`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({[day]: schedule[day]}) // Только этот день
+        });
+        if (!response.ok) throw new Error('Save failed');
+      } catch (e) {
+        console.error(e);
+        Telegram.WebApp.showAlert('Ошибка сохранения. Проверьте соединение.');
+        // Откат на предыдущее состояние
+        schedule[day][time] = current;
+        element.className = `slot state-${current}`;
+        element.querySelector('.slot-text').textContent = TEXTS[current];
+      }
     }
 
     init();
