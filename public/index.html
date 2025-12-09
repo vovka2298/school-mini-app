@@ -2,62 +2,53 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Кабинет преподавателя</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="/js/subjects.js"></script>
   <style>
-    body{margin:0;background:#0d1117;color:#c9d1d9;font-family:system-ui,sans-serif}
-    .header{background:#161b22;padding:16px;display:flex;align-items:center;gap:gap:14px;border-bottom:1px solid #30363d}
+    body{margin:0;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    .header{background:#161b22;padding:16px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #30363d}
     .avatar{width:52px;height:52px;border-radius:50%;border:3px solid #58a6ff;object-fit:cover}
+    .user-info h3{margin:0;font-size:19px;font-weight:600}
+    .user-info p{margin:4px 0 0;font-size:14px;color:#58a6ff}
     .tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d}
     .tab{flex:1;padding:16px;text-align:center;font-weight:600;cursor:pointer}
     .tab.active{background:#1f6feb;color:white}
-    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:24px;font-size:13px}
+    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:24px;font-size:13px;align-items:center}
     .legend-item{display:flex;align-items:center;gap:8px}
     .legend-box{width:16px;height:16px;border-radius:6px}
-    .grid{padding:12px;overflow-y:auto;height:calc(100vh-235px)}
+    .grid{padding:12px;overflow-y:auto;height:calc(100vh - 235px)}
     .week-header{display:flex;margin-left:68px;margin-bottom:8px;font-size:12px;color:#8b949e}
     .day-name{width:88px;text-align:center;flex:none}
     .time-row{display:flex;align-items:center;margin:3px 0}
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px;flex:none}
     .slots{display:flex;flex:1}
-    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:all .2s;flex:none;overflow:hidden}
+    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;flex:none;overflow:hidden}
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
     .slot-time{font-size:9px;opacity:0.8;margin-bottom:3px}
-    .subjects h2{font-size:20px;margin-bottom:10px}
-    .subjects p{font-size:14px;color:#8b949e;margin-bottom:20px}
-    .subjects-block{background:#161b22;border-radius:12px;padding:20px}
-    .checkbox-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
-    .checkbox-item{display:flex;align-items:center;gap:12px;font-size:15px;cursor:pointer}
-    .checkbox-item input{transform:scale(1.4)}
-    .gender label{font-size:15px}
-    .save-btn{background:#1f6feb;color:white;border:none;padding:16px;border-radius:12px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
+    .slot-text{line-height:1.1;max-width:100%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
   </style>
 </head>
 <body>
   <div class="header">
-    <img class="avatar" id="avatar" src="" alt="">
-    <div>
+    <img class="avatar" id="avatar" src="" alt="Аватар">
+    <div class="user-info">
       <h3 id="userName">Загрузка...</h3>
       <p>Кабинет преподавателя</p>
     </div>
   </div>
-
   <div class="tabs">
-    <div class="tab active" onclick="openTab('schedule')">Расписание</div>
-    <div class="tab" onclick="openTab('bookings')">Заявки</div>
-    <div class="tab" onclick="openTab('subjects')">Предметы</div>
+    <div class="tab active" onclick="showTab('schedule')">Расписание</div>
+    <div class="tab" onclick="showTab('bookings')">Мои заявки</div>
+    <div class="tab" onclick="showTab('subjects')">Предметы</div>
   </div>
-
   <div class="legend">
     <div class="legend-item"><div class="legend-box" style="background:#21262d"></div>Не работаю</div>
     <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Свободен</div>
     <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
-
   <div class="grid" id="content"></div>
 
   <script>
@@ -76,102 +67,74 @@
     let user = null;
     let schedule = {};
 
-    function headers() {
-      return { 'x-telegram-webapp-init-data': Telegram.WebApp.initData || '' };
-    }
-
-    async function start() {
-      try {
-        const res = await fetch('/api/user', { headers: headers() });
-        if (!res.ok) throw new Error(res.status);
-        const u = await res.json();
-
+    async function init(){
+      try{
+        const u = await fetch('/api/user').then(r=>r.json());
+        if(!u.role) return setTimeout(init, 1000);
         user = u;
         document.getElementById('userName').textContent = u.name;
+        if(u.photo) document.getElementById('avatar').src = u.photo;
 
-        const sres = await fetch('/api/schedules', { headers: headers() });
-        if (sres.ok) {
-          const all = await sres.json();
-          schedule = all[u.tgId] || {};
-        }
-
-        openTab('schedule');
-      } catch (e) {
-        console.error(e);
-        Telegram.WebApp.showAlert('Ошибка загрузки. Попробуйте позже.');
-        setTimeout(start, 3000);
+        const s = await fetch('/api/schedules').then(r=>r.json());
+        schedule = s[u.tgId] || {};
+        renderSchedule();
+      }catch(e){
+        setTimeout(init, 1000);
       }
     }
 
-    function openTab(tab) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    const content = document.getElementById('content');
+
+    function showTab(tab){
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
       event.target.classList.add('active');
-      const c = document.getElementById('content');
-
-      if (tab === 'schedule') {
-        let html = '<div class="week-header"><div></div>';
-        DAYS.forEach(d => html += `<div class="day-name">${d}</div>`);
-        html += '</div>';
-
-        TIMES.forEach(t => {
-          html += `<div class="time-row"><div class="time-label">${t}</div><div class="slots">`;
-          DAYS.forEach((_, i) => {
-            const day = FULL_DAYS[i];
-            const st = (schedule[day]?.[t]) ?? 0;
-            html += `<div class="slot state-${st}" onclick="toggle('${day}','${t}',this)">
-              <div class="slot-time">${t}</div>
-              <div class="slot-text">${TEXTS[st]}</div>
-            </div>`;
-          });
-          html += '</div></div>';
+      if(tab==='schedule') renderSchedule();
+      else if(tab==='bookings') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут</p>';
+      else if(tab==='subjects') {
+        fetch('subjects.html').then(r=>r.text()).then(html=>{
+          content.innerHTML = html;
+          const script = document.createElement('script');
+          script.src = '/js/subjects.js';
+          document.body.appendChild(script);
         });
-        c.innerHTML = html;
-      } else if (tab === 'bookings') {
-        c.innerHTML = '<p style="text-align:center;padding:80px;color:#8b949e">Заявки скоро появятся</p>';
-      } else if (tab === 'subjects') {
-        c.innerHTML = `
-          <div class="subjects">
-            <h2>Мои предметы</h2>
-            <p>Выберите предметы, которые вы преподаёте</p>
-            <div class="subjects-block">
-              <div class="checkbox-grid" id="subjectsList">Загрузка...</div>
-              <div class="gender">
-                <p style="margin:20px 0 10px">Ваш пол</p>
-                <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
-                <label style="margin-left:20px"><input type="radio" name="gender" value="Женский"> Женский</label>
-              </div>
-              <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
-            </div>
-          </div>`;
-        setTimeout(loadProfile, 100); // даём время на рендер
       }
     }
 
-    async function toggle(day, time, el) {
-      if (!user) return;
+    function renderSchedule(){
+      let html = '<div class="week-header"><div></div>';
+      DAYS.forEach(d=>html+=`<div class="day-name">${d}</div>`);
+      html += '</div>';
+      TIMES.forEach(time=>{
+        html += `<div class="time-row"><div class="time-label">${time}</div><div class="slots">`;
+        DAYS.forEach((_,i)=>{
+          const day = FULL_DAYS[i];
+          const state = (schedule[day]?.[time]) ?? 0;
+          html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}',this)">
+                     <div class="slot-time">${time}</div>
+                     <div class="slot-text">${TEXTS[state]}</div>
+                   </div>`;
+        });
+        html += '</div></div>';
+      });
+      content.innerHTML = html;
+    }
 
-      if (!schedule[day]) schedule[day] = {};
-      const cur = schedule[day][time] ?? 0;
-      const next = (cur + 1) % 3;
+    async function toggle(day,time,element){
+      if(!schedule[day]) schedule[day] = {};
+      const current = schedule[day][time] ?? 0;
+      const next = (current + 1) % 3;
       schedule[day][time] = next;
-      el.className = `slot state-${next}`;
-      el.querySelector('.slot-text').textContent = TEXTS[next];
+      element.className = `slot state-${next}`;
+      element.querySelector('.slot-text').textContent = TEXTS[next];
 
-      try {
-        await fetch(`/api/schedule/${user.tgId}`, {
-          method: 'POST',
-          headers: { ...headers(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ [day]: schedule[day] })
-        });
-      } catch (e) {
-        Telegram.WebApp.showAlert('Ошибка сохранения');
-        schedule[day][time] = cur;
-        el.className = `slot state-${cur}`;
-        el.querySelector('.slot-text').textContent = TEXTS[cur];
-      }
+      await fetch(`/api/schedule/${user.tgId}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({[day]:schedule[day]})
+      });
     }
 
-    start();
+    init();
   </script>
 </body>
 </html>
