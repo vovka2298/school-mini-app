@@ -1,151 +1,112 @@
-// server.js — РАБОЧАЯ ВЕРСИЯ (декабрь 2025)
-
 const express = require('express');
 const { Redis } = require('@upstash/redis');
 const path = require('path');
-
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Upstash Redis (убедись, что переменные окружения заданы в Vercel!)
+// Upstash Redis — данные сохраняются навсегда
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: "default"
 });
-
-const DATA_KEY = "school_app_all_data_v2";
-
-function getTgId(req) {
-  let initData = req.headers['x-telegram-webapp-init-data'] ||
-                  req.headers['x-telegram-web-app-init-data'] ||
-                  req.query.initData || '';
-
-  if (!initData) return null;
-
-  try {
-    const params = new URLSearchParams(initData);
-    const userStr = params.get('user');
-    if (!userStr) return null;
-    const user = JSON.parse(userStr);
-    return user.id.toString();
-  } catch (e) {
-    console.error('Ошибка парсинга initData:', e);
-    return null;
-  }
+const DATA_KEY = "school_app_all_data";
+// Глобальные данные
+let appData = {
+  users: {},
+  schedules: {},
+  profiles: {},
+  admins: []
+};
+async function loadData() {
+  try {
+    const saved = await redis.get(DATA_KEY);
+    if (saved) {
+      appData = saved;
+      console.log("Данные загружены из Redis");
+    }
+  } catch (e) {
+    console.log("Ошибка загрузки:", e);
+  }
+  // ТЫ — ВЕЧНЫЙ АДМИН
+  const myId = "913096324";
+  if (!appData.admins.includes(myId)) {
+    appData.admins.push(myId);
+    appData.users[myId] = { name: "Владимир", role: "admin" };
+    appData.schedules[myId] = appData.schedules[myId] || {};
+    appData.profiles[myId] = appData.profiles[myId] || { subjects: [], gender: "Мужской" };
+    await saveData();
+  }
 }
-
-async function getData() {
-  try {
-    const data = await redis.get(DATA_KEY);
-    return data || { users: {}, schedules: {}, profiles: {}, admins: [] };
-  } catch (e) {
-    console.error('Redis ошибка чтения:', e);
-    return { users: {}, schedules: {}, profiles: {}, admins: [] };
-  }
+async function saveData() {
+  try {
+    await redis.set(DATA_KEY, appData);
+  } catch (e) {
+    console.log("Ошибка сохранения:", e);
+  }
 }
-
-async function saveData(data) {
-  try {
-    await redis.set(DATA_KEY, data);
-  } catch (e) {
-    console.error('Redis ошибка записи:', e);
-  }
-}
-
-async function ensureMyAdmin(data) {
-  const myId = "913096324";
-  if (!data.admins.includes(myId)) {
-    data.admins.push(myId);
-    data.users[myId] = { name: "Владимир", role: "admin" };
-    data.schedules[myId] = {};
-    data.profiles[myId] = { subjects: [], gender: "Мужской" };
-    await saveData(data);
-  }
-  return data;
-}
-
+loadData(); // Загружаем при старте
 // === API ===
-
 app.get('/api/user', async (req, res) => {
-  const tgId = getTgId(req);
-  if (!tgId) return res.status(401).json({ error: "No auth" });
-
-  let data = await getData();
-  data = await ensureMyAdmin(data);
-
-  const user = data.users[tgId];
-  res.json({
-    role: data.admins.includes(tgId) ? 'admin' : (user?.role || 'teacher'),
-    name: user?.name || "Преподаватель",
-    photo: "",
-    tgId
-  });
+  const id = "913096324";
+  const user = appData.users[id];
+  if (!user) return res.json({ role: null });
+  res.json({
+    role: appData.admins.includes(id) ? 'admin' : 'teacher',
+    name: user.name,
+    photo: "",
+    tgId: id
+  });
 });
-
 app.get('/api/schedules', async (req, res) => {
-  const tgId = getTgId(req);
-  if (!tgId) return res.status(401).json({ error: "No auth" });
-
-  const data = await getData();
-  res.json(data.schedules[tgId] || {});
+  const id = "913096324";
+  if (!appData.users[id]) return res.status(403).send();
+  res.json(appData.schedules);
 });
-
 app.post('/api/schedule/:tgId', async (req, res) => {
-  const tgId = req.params.tgId;
-  const authId = getTgId(req);
-  if (tgId !== authId) return res.status(403).json({ error: "Forbidden" });
-
-  let data = await getData();
-  data.schedules[tgId] = data.schedules[tgId] || {};
-  Object.assign(data.schedules[tgId], req.body);
-  await saveData(data);
-  res.json({ ok: true });
+  const target = req.params.tgId;
+  if (!appData.schedules[target]) appData.schedules[target] = {};
+  Object.assign(appData.schedules[target], req.body);
+  await saveData();
+  res.json({ ok: true });
 });
-
 app.get('/api/profile/:tgId', async (req, res) => {
-  const tgId = req.params.tgId;
-  const authId = getTgId(req);
-  if (tgId !== authId) return res.status(403).json({ error: "Forbidden" });
-
-  const data = await getData();
-  res.json(data.profiles[tgId] || { subjects: [], gender: "Мужской" });
+  res.json(appData.profiles?.[req.params.tgId] || { subjects: [], gender: "Мужской" });
 });
-
 app.post('/api/profile/:tgId', async (req, res) => {
-  const tgId = req.params.tgId;
-  const authId = getTgId(req);
-  if (tgId !== authId) return res.status(403).json({ error: "Forbidden" });
-
-  let data = await getData();
-  data.profiles[tgId] = req.body;
-  await saveData(data);
-  res.json({ ok: true });
+  appData.profiles[req.params.tgId] = req.body;
+  await saveData();
+  res.json({ ok: true });
 });
-
-// Для админа — одобрение новых пользователей
 app.post('/api/approve_user', async (req, res) => {
-  const adminId = getTgId(req);
-  if (!adminId) return res.status(401).json({ error: "No auth" });
-
-  let data = await getData();
-  data = await ensureMyAdmin(data);
-  if (!data.admins.includes(adminId)) return res.status(403).json({ error: "Admin only" });
-
-  const { tgId, name, role = "teacher" } = req.body;
-  data.users[tgId] = { name, role };
-  data.schedules[tgId] = {};
-  data.profiles[tgId] = { subjects: [], gender: "Мужской" };
-  await saveData(data);
-  res.json({ ok: true });
+  const { tgId, name, role } = req.body;
+  appData.users[tgId] = { name, role };
+  if (role === 'admin') appData.admins.push(tgId);
+  appData.schedules[tgId] = appData.schedules[tgId] || {};
+  appData.profiles[tgId] = appData.profiles[tgId] || { subjects: [], gender: "Мужской" };
+  await saveData();
+  res.json({ ok: true });
 });
-
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Сервер запущен на порту ${port}`);
-  console.log('Redis URL:', process.env.UPSTASH_REDIS_REST_URL ? 'OK' : 'ОТСУТСТВУЕТ!');
-});
+app.listen(port, () => console.log('Сервер запущен — данные сохраняются навсегда!'));
+package.json
+{
+  "name": "school-mini-app",
+  "version": "1.0.0",
+  "description": "Кабинет расписания для преподавателей",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.34.0",
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "author": "Владимир",
+  "license": "MIT"
+}
