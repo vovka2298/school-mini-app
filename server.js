@@ -5,21 +5,13 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Храним данные В ПАМЯТИ (временно, пока не настроим Redis)
+// Храним данные В ПАМЯТИ
 let users = {
   "913096324": { name: "Владимир", role: "admin" }
 };
 
 let schedules = {
-  "913096324": {
-    "Понедельник": {},
-    "Вторник": {},
-    "Среда": {},
-    "Четверг": {},
-    "Пятница": {},
-    "Суббота": {},
-    "Воскресенье": {}
-  }
+  "913096324": {}
 };
 
 let profiles = {
@@ -31,7 +23,17 @@ let profiles = {
 
 let admins = ["913096324"];
 
-// === ПРОСТЫЕ API ===
+// === API ===
+
+// Главная страница
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Страница предметов
+app.get('/subjects.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'subjects.html'));
+});
 
 // Получить данные пользователя
 app.get('/api/user', (req, res) => {
@@ -46,7 +48,7 @@ app.get('/api/user', (req, res) => {
   });
 });
 
-// Получить ВСЕ расписания (для админа)
+// Получить ВСЕ расписания
 app.get('/api/schedules', (req, res) => {
   res.json(schedules);
 });
@@ -57,7 +59,7 @@ app.get('/api/my-schedule', (req, res) => {
   res.json(schedules[id] || {});
 });
 
-// Сохранить расписание (КРИТИЧЕСКИЙ ИСПРАВЛЕННЫЙ МЕТОД)
+// Сохранить расписание
 app.post('/api/schedule/:tgId', (req, res) => {
   const target = req.params.tgId;
   const newSchedule = req.body;
@@ -65,15 +67,7 @@ app.post('/api/schedule/:tgId', (req, res) => {
   console.log("СОХРАНЕНИЕ РАСПИСАНИЯ для", target);
   console.log("Полученные данные:", newSchedule);
   
-  if (!schedules[target]) {
-    schedules[target] = {};
-  }
-  
-  // Обновляем расписание
   schedules[target] = newSchedule;
-  
-  console.log("Расписание сохранено в памяти!");
-  console.log("Текущие данные:", schedules[target]);
   
   res.json({ 
     ok: true, 
@@ -84,7 +78,8 @@ app.post('/api/schedule/:tgId', (req, res) => {
 
 // Получить профиль
 app.get('/api/profile/:tgId', (req, res) => {
-  const profile = profiles[req.params.tgId] || { 
+  const tgId = req.params.tgId;
+  const profile = profiles[tgId] || { 
     subjects: [], 
     gender: "Мужской" 
   };
@@ -98,18 +93,22 @@ app.post('/api/profile/:tgId', (req, res) => {
   res.json({ ok: true });
 });
 
-// Проверка состояния сервера
+// Статус сервера
 app.get('/api/status', (req, res) => {
   res.json({
     status: "OK",
     serverTime: new Date().toISOString(),
     usersCount: Object.keys(users).length,
-    schedulesCount: Object.keys(schedules).length,
-    eternalAdmin: "913096324"
+    schedulesCount: Object.keys(schedules).length
   });
 });
 
-// Все остальные запросы → index.html
+// Favicon
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
+// Для всех остальных маршрутов
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -117,6 +116,4 @@ app.get('*', (req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ Сервер запущен на порту ${port}`);
-  console.log(`👤 Вечный админ: 913096324`);
-  console.log(`📁 Работает из папки: ${__dirname}`);
 });
