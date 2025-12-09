@@ -2,19 +2,17 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Кабинет преподавателя</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body{margin:0;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    body{margin:0;background:#0d1117;color:#c9d1d9;font-family:system-ui,sans-serif}
     .header{background:#161b22;padding:16px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #30363d}
     .avatar{width:52px;height:52px;border-radius:50%;border:3px solid #58a6ff;object-fit:cover}
-    .user-info h3{margin:0;font-size:19px;font-weight:600}
-    .user-info p{margin:4px 0 0;font-size:14px;color:#58a6ff}
     .tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d}
     .tab{flex:1;padding:16px;text-align:center;font-weight:600;cursor:pointer}
     .tab.active{background:#1f6feb;color:white}
-    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:24px;font-size:13px;align-items:center}
+    .legend{padding:14px;background:#161b22;display:flex;justify-content:center;gap:24px;font-size:13px}
     .legend-item{display:flex;align-items:center;gap:8px}
     .legend-box{width:16px;height:16px;border-radius:6px}
     .grid{padding:12px;overflow-y:auto;height:calc(100vh - 235px)}
@@ -23,26 +21,25 @@
     .time-row{display:flex;align-items:center;margin:3px 0}
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px;flex:none}
     .slots{display:flex;flex:1}
-    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;flex:none;box-sizing:border-box;overflow:hidden}
+    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:all .2s;overflow:hidden}
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
     .slot-time{font-size:9px;opacity:0.8;margin-bottom:3px}
-    .slot-text{line-height:1.1;max-width:100%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
   </style>
 </head>
 <body>
   <div class="header">
-    <img class="avatar" id="avatar" src="" alt="Аватар">
-    <div class="user-info">
-      <h3 id="userName">Загрузка...</h3>
+    <img class="avatar" id="avatar" src="" alt="">
+    <div>
+      <h3 id="userName">Владимир</h3>
       <p>Кабинет преподавателя</p>
     </div>
   </div>
   <div class="tabs">
-    <div class="tab active" onclick="showTab('schedule')">Расписание</div>
-    <div class="tab" onclick="showTab('bookings')">Мои заявки</div>
-    <div class="tab" onclick="showTab('subjects')">Предметы</div>
+    <div class="tab active" id="tab-schedule" onclick="openTab('schedule')">Расписание</div>
+    <div class="tab" onclick="openTab('bookings')">Заявки</div>
+    <div class="tab" onclick="openTab('subjects')">Предметы</div>
   </div>
   <div class="legend">
     <div class="legend-item"><div class="legend-box" style="background:#21262d"></div>Не работаю</div>
@@ -50,9 +47,11 @@
     <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
   <div class="grid" id="content"></div>
+
   <script>
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
+
     const DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
     const FULL_DAYS = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
     const TIMES = [];
@@ -61,61 +60,65 @@
       if(h<22) TIMES.push(`${h.toString().padStart(2,'0')}:30`);
     }
     const TEXTS = ['Не работаю', 'Свободен', 'Занят'];
-    let user = null;
+
     let schedule = {};
-    async function init(){
-      try{
-        const u = await fetch('/api/user').then(r=>r.json());
-        if(!u.role) return setTimeout(init, 1000);
-        user = u;
-        document.getElementById('userName').textContent = u.name;
-        if(u.photo) document.getElementById('avatar').src = u.photo;
-        const s = await fetch('/api/schedules').then(r=>r.json());
-        schedule = s[u.tgId] || {};
-        showTab('schedule'); // ← ЭТО ЗАСТАВЛЯЕТ РАСПИСАНИЕ ОТКРЫВАТЬСЯ СРАЗУ
-      }catch(e){
-        setTimeout(init, 1000);
-      }
+
+    async function loadAll() {
+      try {
+        const s = await fetch('/api/schedules');
+        if (s.ok) {
+          const data = await s.json();
+          schedule = data;
+          render();
+        }
+      } catch (e) {}
     }
-    const content = document.getElementById('content');
-    function showTab(tab){
-      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-      event.target.classList.add('active');
-      if(tab==='schedule') renderSchedule();
-      else if(tab==='bookings') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут</p>';
-      else if(tab==='subjects') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Предметы</p>';
-    }
-    function renderSchedule(){
+
+    function render() {
       let html = '<div class="week-header"><div></div>';
-      DAYS.forEach(d=>html+=`<div class="day-name">${d}</div>`);
+      DAYS.forEach(d => html += `<div class="day-name">${d}</div>`);
       html += '</div>';
-      TIMES.forEach(time=>{
+
+      TIMES.forEach(time => {
         html += `<div class="time-row"><div class="time-label">${time}</div><div class="slots">`;
-        DAYS.forEach((_,i)=>{
+        DAYS.forEach((_, i) => {
           const day = FULL_DAYS[i];
           const state = (schedule[day]?.[time]) ?? 0;
           html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}',this)">
-                     <div class="slot-time">${time}</div>
-                     <div class="slot-text">${TEXTS[state]}</div>
-                   </div>`;
+            <div class="slot-time">${time}</div>
+            <div class="slot-text">${TEXTS[state]}</div>
+          </div>`;
         });
         html += '</div></div>';
       });
-      content.innerHTML = html;
+      document.getElementById('content').innerHTML = html;
     }
-    async function toggle(day,time,element){
-      if(!schedule[day]) schedule[day] = {};
-      const current = schedule[day][time] ?? 0;
-      const next = (current + 1) % 3;
+
+    async function toggle(day, time, el) {
+      if (!schedule[day]) schedule[day] = {};
+      const cur = schedule[day][time] ?? 0;
+      const next = (cur + 1) % 3;
       schedule[day][time] = next;
-      element.className = `slot state-${next}`;
-      element.querySelector('.slot-text').textContent = TEXTS[next];
-      await fetch(`/api/schedule/${user.tgId}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({[day]:schedule[day]})
+      el.className = `slot state-${next}`;
+      el.querySelector('.slot-text').textContent = TEXTS[next];
+
+      await fetch('/api/schedule/913096324', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({[day]: schedule[day]})
       });
     }
+
+    function openTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + tab)?.classList.add('active');
+      if (tab === 'schedule') render();
+      else if (tab === 'bookings') document.getElementById('content').innerHTML = '<p style="text-align:center;padding:80px;color:#8b949e">Заявки скоро</p>';
+      else if (tab === 'subjects') location.href = 'subjects.html';
+    }
+
+    // САМОЕ ГЛАВНОЕ — РАСПИСАНИЕ ОТКРЫВАЕТСЯ СРАЗУ
+    loadAll();
   </script>
 </body>
 </html>
