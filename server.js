@@ -6,7 +6,6 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Подключаемся к твоей Upstash Redis
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: "default"
@@ -14,29 +13,29 @@ const redis = new Redis({
 
 const DATA_KEY = "school_app_data";
 
-// Загружаем данные один раз при старте
+// Глобальная переменная с данными
 let data = { users: {}, schedules: {}, profiles: {}, admins: [] };
 
+// === Загрузка данных при старте ===
 async function loadData() {
   try {
     const saved = await redis.get(DATA_KEY);
-    if (saved) {
+    if (saved && typeof saved === 'object') {
       data = saved;
-      console.log("Данные загружены из Redis");
-    } else {
-      console.log("Redis пустой — создаём начальные данные");
+      console.log("Данные успешно загружены из Redis");
     }
   } catch (e) {
     console.log("Ошибка загрузки из Redis:", e);
   }
 
   // ТЫ — ВЕЧНЫЙ АДМИН
-  if (!data.admins?.includes("913096324")) {
+  const myId = "913096324";
+  if (!data.admins?.includes(myId)) {
     data.admins = data.admins || [];
-    data.admins.push("913096324");
-    data.users["913096324"] = { name: "Владимир", role: "admin" };
-    data.schedules["913096324"] = data.schedules["913096324"] || {};
-    data.profiles["913096324"] = data.profiles["913096324"] || { subjects: [], gender: "Мужской" };
+    data.admins.push(myId);
+    data.users[myId] = { name: "Владимир", role: "admin" };
+    data.schedules[myId] = data.schedules[myId] || {};
+    data.profiles[myId] = data.profiles[myId] || { subjects: [], gender: "Мужской" };
     await saveData();
   }
 }
@@ -44,13 +43,12 @@ async function loadData() {
 async function saveData() {
   try {
     await redis.set(DATA_KEY, data);
-    console.log("Данные сохранены в Redis");
   } catch (e) {
     console.log("Ошибка сохранения:", e);
   }
 }
 
-// Загружаем при старте
+// Загружаем при запуске
 loadData();
 
 // === API ===
