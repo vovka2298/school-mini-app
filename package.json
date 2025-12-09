@@ -1,18 +1,24 @@
 {
-  "name": "school-mini-app",
-  "version": "1.0.0",
-  "description": "Кабинет расписания для преподавателей",
-  "main": "server.js",
+  "name": "your-project-name",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "start": "node server.js"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "@vercel/kv": "^0.2.0"
+    "next": "14.0.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "redis": "^4.6.0"
   },
-  "engines": {
-    "node": "20.x"
-  },
-  "author": "Владимир",
-  "license": "MIT"
+  "devDependencies": {
+    "autoprefixer": "^10.0.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.3.0"
+  }
 }
