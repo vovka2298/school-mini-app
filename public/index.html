@@ -26,13 +26,14 @@
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
     .slot-time{font-size:9px;opacity:0.8;margin-bottom:3px}
+    .loading{text-align:center;padding:40px;color:#8b949e}
   </style>
 </head>
 <body>
   <div class="header">
     <img class="avatar" id="avatar" src="" alt="">
     <div>
-      <h3 id="userName">Владимир</h3>
+      <h3 id="userName">Загрузка...</h3>
       <p>Кабинет преподавателя</p>
     </div>
   </div>
@@ -46,7 +47,9 @@
     <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Свободен</div>
     <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
-  <div class="grid" id="content"></div>
+  <div class="grid" id="content">
+    <div class="loading">Загрузка расписания...</div>
+  </div>
 
   <script>
     Telegram.WebApp.ready();
@@ -61,20 +64,63 @@
     }
     const TEXTS = ['Не работаю', 'Свободен', 'Занят'];
 
-    let schedule = {};
+    let mySchedule = {};
+    const tgId = "913096324"; // Статический ID для тестирования
+    
+    // Задержка для дебаунса сохранения
+    let saveTimeout = null;
+    const SAVE_DELAY = 500; // 0.5 секунды
 
-    async function loadAll() {
+    // Загружаем ВСЁ сразу при запуске
+    async function init() {
+      console.log("Инициализация приложения...");
+      
       try {
-        const s = await fetch('/api/schedules');
-        if (s.ok) {
-          const data = await s.json();
-          schedule = data;
-          render();
+        // Загружаем данные пользователя
+        const userResponse = await fetch('/api/user');
+        const userData = await userResponse.json();
+        
+        if (userData.name) {
+          document.getElementById('userName').textContent = userData.name;
         }
-      } catch (e) {}
+        
+        // ЗАГРУЗКА РАСПИСАНИЯ ПРИ ЗАПУСКЕ
+        await loadSchedule();
+        
+        console.log("Приложение инициализировано");
+      } catch (e) {
+        console.error("Ошибка инициализации:", e);
+        document.getElementById('content').innerHTML = '<div class="loading">Ошибка загрузки</div>';
+      }
     }
 
-    function render() {
+    async function loadSchedule() {
+      try {
+        console.log("Загрузка расписания...");
+        const response = await fetch('/api/my-schedule');
+        
+        if (!response.ok) {
+          throw new Error('Ошибка загрузки расписания');
+        }
+        
+        const scheduleData = await response.json();
+        console.log("Получено расписание:", scheduleData);
+        
+        mySchedule = scheduleData || {};
+        
+        // Автоматически рендерим расписание
+        renderSchedule();
+        
+      } catch (e) {
+        console.error("Ошибка загрузки расписания:", e);
+        mySchedule = {};
+        renderSchedule();
+      }
+    }
+
+    function renderSchedule() {
+      console.log("Рендерим расписание...");
+      
       let html = '<div class="week-header"><div></div>';
       DAYS.forEach(d => html += `<div class="day-name">${d}</div>`);
       html += '</div>';
@@ -83,42 +129,89 @@
         html += `<div class="time-row"><div class="time-label">${time}</div><div class="slots">`;
         DAYS.forEach((_, i) => {
           const day = FULL_DAYS[i];
-          const state = (schedule[day]?.[time]) ?? 0;
-          html += `<div class="slot state-${state}" onclick="toggle('${day}','${time}',this)">
+          const state = mySchedule[day]?.[time] ?? 0;
+          html += `<div class="slot state-${state}" onclick="toggleSlot('${day}','${time}',this)">
             <div class="slot-time">${time}</div>
             <div class="slot-text">${TEXTS[state]}</div>
           </div>`;
         });
         html += '</div></div>';
       });
+      
       document.getElementById('content').innerHTML = html;
+      console.log("Расписание отрендерено");
     }
 
-    async function toggle(day, time, el) {
-      if (!schedule[day]) schedule[day] = {};
-      const cur = schedule[day][time] ?? 0;
-      const next = (cur + 1) % 3;
-      schedule[day][time] = next;
-      el.className = `slot state-${next}`;
-      el.querySelector('.slot-text').textContent = TEXTS[next];
+    async function toggleSlot(day, time, el) {
+      if (!mySchedule[day]) {
+        mySchedule[day] = {};
+      }
+      
+      const currentState = mySchedule[day][time] ?? 0;
+      const newState = (currentState + 1) % 3;
+      
+      // Обновляем локальное расписание
+      mySchedule[day][time] = newState;
+      
+      // Мгновенно обновляем UI
+      el.className = `slot state-${newState}`;
+      el.querySelector('.slot-text').textContent = TEXTS[newState];
+      
+      // Сохраняем с задержкой (дебаунс)
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+      }
+      
+      saveTimeout = setTimeout(async () => {
+        await saveSchedule();
+      }, SAVE_DELAY);
+    }
 
-      await fetch('/api/schedule/913096324', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({[day]: schedule[day]})
-      });
+    async function saveSchedule() {
+      console.log("Сохранение расписания...", mySchedule);
+      
+      try {
+        const response = await fetch(`/api/schedule/${tgId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(mySchedule) // Отправляем ВСЁ расписание
+        });
+        
+        const result = await response.json();
+        if (result.ok) {
+          console.log("Расписание успешно сохранено в Redis");
+        } else {
+          console.error("Ошибка сохранения:", result);
+        }
+      } catch (e) {
+        console.error("Ошибка при сохранении:", e);
+      }
     }
 
     function openTab(tab) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('tab-' + tab)?.classList.add('active');
-      if (tab === 'schedule') render();
-      else if (tab === 'bookings') document.getElementById('content').innerHTML = '<p style="text-align:center;padding:80px;color:#8b949e">Заявки скоро</p>';
-      else if (tab === 'subjects') location.href = 'subjects.html';
+      
+      if (tab === 'schedule') {
+        renderSchedule();
+      } else if (tab === 'bookings') {
+        document.getElementById('content').innerHTML = '<div class="loading">Заявки скоро</div>';
+      } else if (tab === 'subjects') {
+        location.href = 'subjects.html';
+      }
     }
 
-    // САМОЕ ГЛАВНОЕ — РАСПИСАНИЕ ОТКРЫВАЕТСЯ СРАЗУ
-    loadAll();
+    // ЗАПУСКАЕМ ВСЁ ПРИ ЗАГРУЗКЕ
+    window.addEventListener('DOMContentLoaded', init);
+    
+    // Также запускаем при полной загрузке страницы
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
   </script>
 </body>
 </html>
