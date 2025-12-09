@@ -72,27 +72,37 @@
     }
     
     .checkbox-item input {
-      transform: scale(1.4);
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
     }
     
     .gender {
       margin: 20px 0 30px;
+      padding: 15px;
+      background: #21262d;
+      border-radius: 8px;
     }
     
     .gender p {
-      margin: 0 0 10px 0;
+      margin: 0 0 15px 0;
       font-size: 15px;
+      color: #c9d1d9;
     }
     
     .gender label {
       font-size: 15px;
-      margin-right: 20px;
+      margin-right: 25px;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
     
     .gender input {
-      margin-right: 8px;
-      transform: scale(1.2);
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
     }
     
     .save-btn {
@@ -106,6 +116,7 @@
       font-weight: 600;
       cursor: pointer;
       transition: background 0.2s;
+      margin-top: 10px;
     }
     
     .save-btn:hover {
@@ -116,6 +127,12 @@
       background: #30363d;
       cursor: not-allowed;
     }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #8b949e;
+    }
   </style>
 </head>
 <body>
@@ -125,12 +142,16 @@
     <h2>Мои предметы</h2>
     <p>Выберите теги предметов, которые вы преподаете</p>
     <div class="subjects-block">
-      <div class="checkbox-grid" id="subjectsList"></div>
+      <div id="subjectsContainer">
+        <div class="loading">Загрузка предметов...</div>
+      </div>
+      
       <div class="gender">
         <p>Укажите ваш пол</p>
         <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
         <label><input type="radio" name="gender" value="Женский"> Женский</label>
       </div>
+      
       <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
     </div>
   </div>
@@ -155,41 +176,56 @@
     
     async function loadProfile() {
       try {
+        console.log("Загрузка профиля...");
         const response = await fetch(`/api/profile/${tgId}`);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log("Получен профиль:", data);
+          
           profile.subjects = Array.isArray(data.subjects) ? data.subjects : [];
-          profile.gender = data.gender || "Мужской";
+          profile.gender = ["Мужской", "Женский"].includes(data.gender) ? data.gender : "Мужской";
           
           renderSubjects();
+        } else {
+          throw new Error('Ошибка загрузки профиля');
         }
       } catch (e) {
         console.error("Ошибка загрузки профиля:", e);
+        // Если ошибка, используем пустой профиль
         renderSubjects();
       }
     }
     
     function renderSubjects() {
-      const list = document.getElementById('subjectsList');
-      if (!list) return;
+      const container = document.getElementById('subjectsContainer');
+      if (!container) return;
       
-      list.innerHTML = SUBJECTS.map(subject => {
-        const isChecked = profile.subjects.includes(subject);
-        const displayName = subject.replace(/_/g, ' ');
-        
-        return `
-          <label class="checkbox-item">
-            <input type="checkbox" ${isChecked ? 'checked' : ''} 
-                   onchange="toggleSubject('${subject}', this.checked)">
-            <span>${displayName}</span>
-          </label>
-        `;
-      }).join('');
+      const html = `
+        <div class="checkbox-grid">
+          ${SUBJECTS.map(subject => {
+            const isChecked = profile.subjects.includes(subject);
+            const displayName = subject.replace(/_/g, ' ');
+            
+            return `
+              <label class="checkbox-item">
+                <input type="checkbox" ${isChecked ? 'checked' : ''} 
+                       onchange="toggleSubject('${subject}', this.checked)">
+                <span>${displayName}</span>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      `;
+      
+      container.innerHTML = html;
       
       // Устанавливаем пол
       document.querySelectorAll('input[name="gender"]').forEach(radio => {
         radio.checked = radio.value === profile.gender;
       });
+      
+      console.log("Предметы отрендерены, выбрано:", profile.subjects.length);
     }
     
     function toggleSubject(subject, isChecked) {
@@ -198,6 +234,7 @@
       } else if (!isChecked) {
         profile.subjects = profile.subjects.filter(s => s !== subject);
       }
+      console.log("Текущие предметы:", profile.subjects);
     }
     
     async function saveProfile() {
@@ -206,6 +243,8 @@
       if (genderRadio) {
         profile.gender = genderRadio.value;
       }
+      
+      console.log("Сохранение профиля:", profile);
       
       try {
         const response = await fetch(`/api/profile/${tgId}`, {
@@ -217,11 +256,16 @@
         });
         
         if (response.ok) {
-          Telegram.WebApp.showAlert("Профиль успешно сохранен!", () => {
-            goBack();
-          });
+          const result = await response.json();
+          if (result.ok) {
+            Telegram.WebApp.showAlert("Профиль успешно сохранен!", () => {
+              goBack();
+            });
+          } else {
+            Telegram.WebApp.showAlert("Ошибка при сохранении профиля");
+          }
         } else {
-          Telegram.WebApp.showAlert("Ошибка при сохранении");
+          Telegram.WebApp.showAlert("Ошибка сервера при сохранении");
         }
       } catch (e) {
         console.error("Ошибка сохранения:", e);
@@ -230,7 +274,7 @@
     }
     
     // Загружаем профиль при загрузке страницы
-    window.addEventListener('DOMContentLoaded', loadProfile);
+    document.addEventListener('DOMContentLoaded', loadProfile);
   </script>
 </body>
 </html>
