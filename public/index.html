@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Кабинет преподавателя</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/js/subjects.js"></script> <!-- Подключаем subjects.js сразу -->
   <style>
     body{margin:0;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
     .header{background:#161b22;padding:16px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #30363d}
@@ -29,6 +30,16 @@
     .state-2{background:#da3633;color:white}
     .slot-time{font-size:9px;opacity:0.8;margin-bottom:3px}
     .slot-text{line-height:1.1;max-width:100%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
+    /* Стили из subjects.html */
+    .subjects h2{font-size:20px;margin-bottom:10px}
+    .subjects p{font-size:14px;color:#8b949e;margin-bottom:20px}
+    .subjects-block{background:#161b22;border-radius:12px;padding:20px}
+    .checkbox-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+    .checkbox-item{display:flex;align-items:center;gap:12px;font-size:15px;cursor:pointer}
+    .checkbox-item input{transform:scale(1.4)}
+    .gender label{font-size:15px}
+    .save-btn{background:#1f6feb;color:white;border:none;padding:16px;border-radius:12px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
+    .save-btn:hover{background:#1565c0}
   </style>
 </head>
 <body>
@@ -70,32 +81,37 @@
     let user = null;
     let schedule = {};
 
+    // Хелпер для headers с initData (фикс авторизации)
+    function getAuthHeaders() {
+      return {
+        'x-telegram-webapp-init-data': Telegram.WebApp.initData || ''  // Пусто в browser, но в Telegram работает
+      };
+    }
+
     async function init(){
       try{
-        const u = await fetch('/api/user').then(r => {
-          if (!r.ok) throw new Error('User fetch failed');
-          return r.json();
-        });
+        const uResponse = await fetch('/api/user', { headers: getAuthHeaders() });
+        if (!uResponse.ok) throw new Error(`User fetch failed: ${uResponse.status}`);
+        const u = await uResponse.json();
         if(!u.role) {
-          Telegram.WebApp.showAlert('Ваш аккаунт не одобрен админом. Подождите.');
-          return setTimeout(init, 5000); // retry
+          Telegram.WebApp.showAlert('Аккаунт не одобрен. Ждите админа.');
+          return setTimeout(init, 5000);
         }
 
         user = u;
         document.getElementById('userName').textContent = u.name || "Преподаватель";
         if(u.photo) document.getElementById('avatar').src = u.photo;
 
-        const s = await fetch('/api/schedules').then(r => {
-          if (!r.ok) throw new Error('Schedules fetch failed');
-          return r.json();
-        });
+        const sResponse = await fetch('/api/schedules', { headers: getAuthHeaders() });
+        if (!sResponse.ok) throw new Error(`Schedules fetch failed: ${sResponse.status}`);
+        const s = await sResponse.json();
         schedule = s[u.tgId] || {};
-        
-        showTab('schedule'); // Авто-открытие расписания при запуске
+
+        showTab('schedule'); // Авто-открытие расписания
       }catch(e){
         console.error('Init error:', e);
-        Telegram.WebApp.showAlert('Ошибка загрузки данных. Проверьте интернет и попробуйте позже.');
-        setTimeout(init, 3000); // retry on error
+        Telegram.WebApp.showAlert('Ошибка загрузки. Проверьте интернет.');
+        setTimeout(init, 3000);
       }
     }
 
@@ -109,28 +125,26 @@
       if(tab === 'schedule'){
         renderSchedule();
       } else if(tab === 'bookings'){
-        content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки учеников скоро будут здесь</p>';
+        content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро...</p>';
       } else if(tab === 'subjects'){
-        // Загружаем subjects.html и subjects.js, с явным вызовом loadProfile
-        fetch('subjects.html')
-          .then(r => r.text())
-          .then(html => {
-            content.innerHTML = html;
-            const script = document.createElement('script');
-            script.src = '/js/subjects.js';
-            script.onload = () => {
-              if (typeof loadProfile === 'function') {
-                loadProfile(); // Явно вызываем, чтобы список появился сразу
-              } else {
-                console.error('loadProfile not found');
-              }
-            };
-            document.body.appendChild(script);
-          })
-          .catch(err => {
-            console.error(err);
-            content.innerHTML = '<p style="color:#f85149;text-align:center;padding:60px">Ошибка загрузки страницы предметов</p>';
-          });
+        // Встроенный HTML из subjects.html
+        content.innerHTML = `
+          <div class="subjects">
+            <h2>Мои предметы</h2>
+            <p>Выберите теги предметов, которые вы преподаете</p>
+            <div class="subjects-block">
+              <div class="checkbox-grid" id="subjectsList"></div>
+              <div class="gender">
+                <p style="margin:20px 0 10px">Укажите ваш пол</p>
+                <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
+                <label style="margin-left:20px"><input type="radio" name="gender" value="Женский"> Женский</label>
+              </div>
+              <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
+            </div>
+          </div>
+        `;
+        // Вызываем loadProfile сразу после рендера DOM
+        loadProfile();
       }
     }
 
@@ -156,7 +170,7 @@
 
     async function toggle(day,time,element){
       if(!user) {
-        Telegram.WebApp.showAlert('Пользователь не загружен. Подождите...');
+        Telegram.WebApp.showAlert('Загрузка пользователя... Подождите.');
         return;
       }
 
@@ -168,16 +182,16 @@
       element.querySelector('.slot-text').textContent = TEXTS[next];
 
       try {
-        const response = await fetch(`/api/schedule/${user.tgId}`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({[day]: schedule[day]}) // Только этот день
+        const response = await fetch(`/api/schedule/${user.tgId}`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [day]: schedule[day] })
         });
         if (!response.ok) throw new Error('Save failed');
       } catch (e) {
         console.error(e);
-        Telegram.WebApp.showAlert('Ошибка сохранения. Проверьте соединение.');
-        // Откат на предыдущее состояние
+        Telegram.WebApp.showAlert('Ошибка сохранения.');
+        // Откат
         schedule[day][time] = current;
         element.className = `slot state-${current}`;
         element.querySelector('.slot-text').textContent = TEXTS[current];
