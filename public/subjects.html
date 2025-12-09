@@ -1,24 +1,236 @@
-<div class="subjects">
-  <h2>Мои предметы</h2>
-  <p>Выберите теги предметов, которые вы преподаете</p>
-  <div class="subjects-block">
-    <div class="checkbox-grid" id="subjectsList"></div>
-    <div class="gender">
-      <p style="margin:20px 0 10px">Укажите ваш пол</p>
-      <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
-      <label style="margin-left:20px"><input type="radio" name="gender" value="Женский"> Женский</label>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Мои предметы</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: system-ui, sans-serif;
+      padding: 20px;
+    }
+    
+    .back-btn {
+      background: #21262d;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .back-btn:hover {
+      background: #30363d;
+    }
+    
+    .subjects h2 {
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+    
+    .subjects p {
+      font-size: 14px;
+      color: #8b949e;
+      margin-bottom: 20px;
+    }
+    
+    .subjects-block {
+      background: #161b22;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 15px;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+    
+    .checkbox-item:hover {
+      background: #21262d;
+    }
+    
+    .checkbox-item input {
+      transform: scale(1.4);
+    }
+    
+    .gender {
+      margin: 20px 0 30px;
+    }
+    
+    .gender p {
+      margin: 0 0 10px 0;
+      font-size: 15px;
+    }
+    
+    .gender label {
+      font-size: 15px;
+      margin-right: 20px;
+      cursor: pointer;
+    }
+    
+    .gender input {
+      margin-right: 8px;
+      transform: scale(1.2);
+    }
+    
+    .save-btn {
+      background: #1f6feb;
+      color: white;
+      border: none;
+      padding: 16px;
+      border-radius: 12px;
+      width: 100%;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .save-btn:hover {
+      background: #1565c0;
+    }
+    
+    .save-btn:disabled {
+      background: #30363d;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <button class="back-btn" onclick="goBack()">← Назад к расписанию</button>
+  
+  <div class="subjects">
+    <h2>Мои предметы</h2>
+    <p>Выберите теги предметов, которые вы преподаете</p>
+    <div class="subjects-block">
+      <div class="checkbox-grid" id="subjectsList"></div>
+      <div class="gender">
+        <p>Укажите ваш пол</p>
+        <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
+        <label><input type="radio" name="gender" value="Женский"> Женский</label>
+      </div>
+      <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
     </div>
-    <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
   </div>
-</div>
-<style>
-  .subjects h2{font-size:20px;margin-bottom:10px}
-  .subjects p{font-size:14px;color:#8b949e;margin-bottom:20px}
-  .subjects-block{background:#161b22;border-radius:12px;padding:20px}
-  .checkbox-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
-  .checkbox-item{display:flex;align-items:center;gap:12px;font-size:15px;cursor:pointer}
-  .checkbox-item input{transform:scale(1.4)}
-  .gender label{font-size:15px}
-  .save-btn{background:#1f6feb;color:white;border:none;padding:16px;border-radius:12px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
-  .save-btn:hover{background:#1565c0}
-</style>
+
+  <script>
+    Telegram.WebApp.ready();
+    Telegram.WebApp.expand();
+    
+    const SUBJECTS = [
+      "МатематикаБаза", "МатематикаОГЭ", "МатематикаЕГЭ", "Математика5_8", "Математика9_11",
+      "Физика5_8", "ФизикаОГЭ", "ФизикаЕГЭ", "Физика9_11", "Высшая математика", "Олимпиада",
+      "Информатика", "Программирование", "Химия", "Биология", "Русский язык",
+      "Английский язык", "Обществознание", "История", "География"
+    ];
+    
+    let profile = { subjects: [], gender: "Мужской" };
+    const tgId = "913096324"; // Статический ID для тестирования
+    
+    function goBack() {
+      window.location.href = '/';
+    }
+    
+    async function loadProfile() {
+      try {
+        const response = await fetch(`/api/profile/${tgId}`);
+        if (response.ok) {
+          const data = await response.json();
+          profile.subjects = Array.isArray(data.subjects) ? data.subjects : [];
+          profile.gender = data.gender || "Мужской";
+          
+          renderSubjects();
+        }
+      } catch (e) {
+        console.error("Ошибка загрузки профиля:", e);
+        renderSubjects();
+      }
+    }
+    
+    function renderSubjects() {
+      const list = document.getElementById('subjectsList');
+      if (!list) return;
+      
+      list.innerHTML = SUBJECTS.map(subject => {
+        const isChecked = profile.subjects.includes(subject);
+        const displayName = subject.replace(/_/g, ' ');
+        
+        return `
+          <label class="checkbox-item">
+            <input type="checkbox" ${isChecked ? 'checked' : ''} 
+                   onchange="toggleSubject('${subject}', this.checked)">
+            <span>${displayName}</span>
+          </label>
+        `;
+      }).join('');
+      
+      // Устанавливаем пол
+      document.querySelectorAll('input[name="gender"]').forEach(radio => {
+        radio.checked = radio.value === profile.gender;
+      });
+    }
+    
+    function toggleSubject(subject, isChecked) {
+      if (isChecked && !profile.subjects.includes(subject)) {
+        profile.subjects.push(subject);
+      } else if (!isChecked) {
+        profile.subjects = profile.subjects.filter(s => s !== subject);
+      }
+    }
+    
+    async function saveProfile() {
+      // Обновляем пол из формы
+      const genderRadio = document.querySelector('input[name="gender"]:checked');
+      if (genderRadio) {
+        profile.gender = genderRadio.value;
+      }
+      
+      try {
+        const response = await fetch(`/api/profile/${tgId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(profile)
+        });
+        
+        if (response.ok) {
+          Telegram.WebApp.showAlert("Профиль успешно сохранен!", () => {
+            goBack();
+          });
+        } else {
+          Telegram.WebApp.showAlert("Ошибка при сохранении");
+        }
+      } catch (e) {
+        console.error("Ошибка сохранения:", e);
+        Telegram.WebApp.showAlert("Ошибка сети при сохранении");
+      }
+    }
+    
+    // Загружаем профиль при загрузке страницы
+    window.addEventListener('DOMContentLoaded', loadProfile);
+  </script>
+</body>
+</html>
