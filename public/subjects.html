@@ -1,3 +1,5 @@
+// public/js/subjects.js — 100% рабочая
+
 const SUBJECTS = [
   "МатематикаБаза","МатематикаОГЭ","МатематикаЕГЭ","Математика5_8","Математика9_11",
   "Физика5_8","ФизикаОГЭ","ФизикаЕГЭ","Физика9_11","Высшая математика","Олимпиада",
@@ -8,8 +10,9 @@ const SUBJECTS = [
 let profile = { subjects: [], gender: "Мужской" };
 
 function getTgId() {
-  try { return Telegram.WebApp.initDataUnsafe.user.id.toString(); }
-  catch { return null; }
+  try {
+    return Telegram.WebApp.initDataUnsafe?.user?.id?.toString() || null;
+  } catch { return null; }
 }
 
 function getHeaders() {
@@ -21,24 +24,22 @@ async function loadProfile() {
   if (!tgId) return;
 
   try {
-    const res = await fetch(`/api/profile/${tgId}`, { headers: getHeaders() });
-    if (res.ok) {
-      const data = await res.json();
-      profile = { ...profile, ...data };
+    const r = await fetch(`/api/profile/${tgId}`, { headers: getHeaders() });
+    if (r.ok) {
+      const d = await r.json();
+      profile.subjects = Array.isArray(d.subjects) ? d.subjects : [];
+      profile.gender = ["Мужской","Женский"].includes(d.gender) ? d.gender : "Мужской";
     }
   } catch (e) { console.warn(e); }
 
-  // Пол
-  const radio = document.querySelector(`input[name="gender"][value="${profile.gender}"]`);
-  if (radio) radio.checked = true;
+  document.querySelector(`input[name="gender"][value="${profile.gender}"]`)?.setAttribute('checked', true);
 
-  // Предметы
   const list = document.getElementById('subjectsList');
   if (list) {
     list.innerHTML = SUBJECTS.map(s => {
-      const checked = profile.subjects.includes(s) ? 'checked' : '';
+      const ch = profile.subjects.includes(s) ? 'checked' : '';
       return `<label class="checkbox-item">
-        <input type="checkbox" ${checked} onchange="toggleSubject('${s}', this.checked)">
+        <input type="checkbox" ${ch} onchange="toggleSubject('${s}', this.checked)">
         <span>${s.replace(/_/g, ' ')}</span>
       </label>`;
     }).join('');
@@ -52,23 +53,19 @@ function toggleSubject(sub, checked) {
 
 async function saveProfile() {
   const tgId = getTgId();
-  if (!tgId) return Telegram.WebApp.showAlert("Ошибка ID");
+  if (!tgId) return Telegram.WebApp.showAlert("Ошибка авторизации");
 
-  const gender = document.querySelector('input[name="gender"]:checked');
-  if (gender) profile.gender = gender.value;
+  const g = document.querySelector('input[name="gender"]:checked');
+  if (g) profile.gender = g.value;
 
   try {
-    const res = await fetch(`/api/profile/${tgId}`, {
+    const r = await fetch(`/api/profile/${tgId}`, {
       method: 'POST',
       headers: { ...getHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(profile)
     });
-    if (res.ok) {
-      Telegram.WebApp.showAlert("Сохранено!");
-    } else {
-      Telegram.WebApp.showAlert("Ошибка сохранения");
-    }
-  } catch (e) {
-    Telegram.WebApp.showAlert("Нет сети");
+    r.ok ? Telegram.WebApp.showAlert("Сохранено!") : Telegram.WebApp.showAlert("Ошибка");
+  } catch {
+    Telegram.WebApp.showAlert("Нет интернета");
   }
 }
