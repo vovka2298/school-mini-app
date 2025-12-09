@@ -1,27 +1,96 @@
-<div class="subjects">
-  <h2>Мои предметы</h2>
-  <p>Выберите теги предметов, которые вы преподаете</p>
-  <div class="subjects-block">
-    <div class="checkbox-grid" id="subjectsList"></div>
+// public/js/subjects.js
+const SUBJECTS = [
+  "МатематикаБаза", "МатематикаОГЭ", "МатематикаЕГЭ", "Математика5_8", "Математика9_11",
+  "Физика5_8", "ФизикаОГЭ", "ФизикаЕГЭ", "Физика9_11", "Высшая математика", "Олимпиада",
+  "Информатика", "Программирование", "Химия", "Биология", "Русский язык", "Английский язык",
+  "Обществознание", "История", "География" // Добавь ещё, если нужно
+];
 
-    <div class="gender">
-      <p style="margin:20px 0 10px">Укажите ваш пол</p>
-      <label><input type="radio" name="gender" value="Мужской"> Мужской</label>
-      <label style="margin-left:20px"><input type="radio" name="gender" value="Женский"> Женский</label>
-    </div>
+let profile = { subjects: [], gender: "Мужской" };
 
-    <button class="save-btn" onclick="saveProfile()">Сохранить изменения</button>
-  </div>
-</div>
+function getTgId() {
+  try {
+    return Telegram.WebApp.initDataUnsafe.user.id.toString();
+  } catch (e) {
+    console.error("Не удалось получить tgId");
+    return null;
+  }
+}
 
-<style>
-  .subjects h2{font-size:20px;margin-bottom:10px}
-  .subjects p{font-size:14px;color:#8b949e;margin-bottom:20px}
-  .subjects-block{background:#161b22;border-radius:12px;padding:20px}
-  .checkbox-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
-  .checkbox-item{display:flex;align-items:center;gap:12px;font-size:15px;cursor:pointer}
-  .checkbox-item input{transform:scale(1.4)}
-  .gender label{font-size:15px}
-  .save-btn{background:#1f6feb;color:white;border:none;padding:16px;border-radius:12px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
-  .save-btn:hover{background:#1565c0}
-</style>
+async function loadProfile() {
+  const tgId = getTgId();
+  if (!tgId) {
+    document.getElementById('subjectsList').innerHTML = "<p style='color:#f85149'>Ошибка авторизации Telegram</p>";
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/profile/${tgId}`);
+    if (response.ok) {
+      const data = await response.json();
+      profile = { ...profile, ...data };
+    }
+  } catch (e) {
+    console.warn("Не удалось загрузить профиль", e);
+  }
+
+  const genderRadio = document.querySelector(`input[name="gender"][value="${profile.gender}"]`);
+  if (genderRadio) genderRadio.checked = true;
+
+  const list = document.getElementById('subjectsList');
+  if (list) {
+    list.innerHTML = SUBJECTS.map(sub => {
+      const checked = profile.subjects.includes(sub) ? 'checked' : '';
+      const displayName = sub.replace(/_/g, ' ');
+      return `
+        <label class="checkbox-item">
+          <input type="checkbox" ${checked} onchange="toggleSubject('${sub}', this.checked)">
+          <span>${displayName}</span>
+        </label>
+      `;
+    }).join('');
+  } else {
+    console.error('subjectsList not found');
+  }
+}
+
+function toggleSubject(subject, isChecked) {
+  if (isChecked && !profile.subjects.includes(subject)) {
+    profile.subjects.push(subject);
+  } else if (!isChecked) {
+    profile.subjects = profile.subjects.filter(s => s !== subject);
+  }
+}
+
+async function saveProfile() {
+  const tgId = getTgId();
+  if (!tgId) {
+    Telegram.WebApp.showAlert("Ошибка: не удалось определить ваш ID");
+    return;
+  }
+
+  const genderInput = document.querySelector('input[name="gender"]:checked');
+  if (genderInput) {
+    profile.gender = genderInput.value;
+  }
+
+  try {
+    const response = await fetch(`/api/profile/${tgId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile)
+    });
+    if (response.ok) {
+      Telegram.WebApp.showAlert("Профиль сохранён!");
+    } else {
+      Telegram.WebApp.showAlert("Ошибка сохранения.");
+    }
+  } catch (e) {
+    Telegram.WebApp.showAlert("Нет соединения.");
+  }
+}
+
+// Автозагрузка при добавлении скрипта
+if (document.getElementById('subjectsList')) {
+  loadProfile();
+}
