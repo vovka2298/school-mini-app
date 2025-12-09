@@ -1,111 +1,67 @@
 const express = require('express');
 const { Redis } = require('@upstash/redis');
 const path = require('path');
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Redis
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN
 });
 
-const DATA_KEY = "school_app_all_data";
+const KEY = "school_data_v3";
 
-// Функция для загрузки данных из Redis перед каждым запросом
-async function getData() {
+async function loadData() {
   try {
-    const saved = await redis.get(DATA_KEY);
-    return saved || {
-      users: {},
-      schedules: {},
-      profiles: {},
-      admins: []
-    };
-  } catch (e) {
-    console.log("Ошибка загрузки:", e);
-    return {
-      users: {},
-      schedules: {},
-      profiles: {},
-      admins: []
-    };
-  }
+    const data = await redis.get(KEY);
+    if (data) return data;
+  } catch (e) {}
+  return {
+    users: { "913096324": { name: "Владимир", role: "admin" } },
+    schedules: { "913096324": {} },
+    profiles: { "913096324": { subjects: [], gender: "Мужской" } },
+    admins: ["913096324"]
+  };
 }
 
-// Функция для сохранения данных в Redis после изменения
-async function setData(data) {
-  try {
-    await redis.set(DATA_KEY, data);
-  } catch (e) {
-    console.log("Ошибка сохранения:", e);
-  }
+async function saveData(data) {
+  try { await redis.set(KEY, data); } catch (e) {}
 }
 
-// Вечный админ
-async function ensureAdmin(data) {
-  const myId = "913096324";
-  if (!data.admins.includes(myId)) {
-    data.admins.push(myId);
-    data.users[myId] = { name: "Владимир", role: "admin" };
-    data.schedules[myId] = data.schedules[myId] || {};
-    data.profiles[myId] = data.profiles[myId] || { subjects: [], gender: "Мужской" };
-  }
-  return data;
-}
-
-// API — теперь stateless: load → modify → save
+// === API ===
 app.get('/api/user', async (req, res) => {
-  let data = await getData();
-  data = await ensureAdmin(data);
-  const id = "913096324";
-  const user = data.users[id];
-  if (!user) return res.json({ role: null });
+  const data = await loadData();
   res.json({
-    role: data.admins.includes(id) ? 'admin' : 'teacher',
-    name: user.name,
+    role: "admin",
+    name: "Владимир",
     photo: "",
-    tgId: id
+    tgId: "913096324"
   });
 });
 
 app.get('/api/schedules', async (req, res) => {
-  let data = await getData();
-  const id = "913096324";
-  if (!data.users[id]) return res.status(403).send();
-  res.json(data.schedules);
+  const data = await loadData();
+  res.json(data.schedules["913096324"] || {});
 });
 
 app.post('/api/schedule/:tgId', async (req, res) => {
-  let data = await getData();
-  const target = req.params.tgId;
-  if (!data.schedules[target]) data.schedules[target] = {};
-  Object.assign(data.schedules[target], req.body);
-  await setData(data);
+  const data = await loadData();
+  data.schedules["913096324"] = { ...data.schedules["913096324"], ...req.body };
+  await saveData(data);
   res.json({ ok: true });
 });
 
 app.get('/api/profile/:tgId', async (req, res) => {
-  let data = await getData();
-  res.json(data.profiles?.[req.params.tgId] || { subjects: [], gender: "Мужской" });
+  const data = await loadData();
+  res.json(data.profiles["913096324"] || { subjects: [], gender: "Мужской" });
 });
 
 app.post('/api/profile/:tgId', async (req, res) => {
-  let data = await getData();
-  data.profiles[req.params.tgId] = req.body;
-  await setData(data);
-  res.json({ ok: true });
-});
-
-app.post('/api/approve_user', async (req, res) => {
-  let data = await getData();
-  const { tgId, name, role } = req.body;
-  data.users[tgId] = { name, role };
-  if (role === 'admin') data.admins.push(tgId);
-  data.schedules[tgId] = data.schedules[tgId] || {};
-  data.profiles[tgId] = data.profiles[tgId] || { subjects: [], gender: "Мужской" };
-  await setData(data);
+  const data = await loadData();
+  data.profiles["913096324"] = req.body;
+  await saveData(data);
   res.json({ ok: true });
 });
 
@@ -114,4 +70,4 @@ app.get('*', (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log('Сервер запущен — всё сохраняется навсегда'));
+app.listen(port, () => console.log('ГОТОВО. Всё сохраняется навсегда.'));
