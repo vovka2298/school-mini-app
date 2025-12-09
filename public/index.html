@@ -47,9 +47,9 @@
   </div>
 
   <div class="legend">
-    <div class="legend-item">Не работаю</div>
-    <div class="legend-item">Свободен</div>
-    <div class="legend-item">Занят</div>
+    <div class="legend-item"><div class="legend-box" style="background:#21262d"></div>Не работаю</div>
+    <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Свободен</div>
+    <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
 
   <div class="grid" id="content"></div>
@@ -81,13 +81,12 @@
 
         const s = await fetch('/api/schedules').then(r=>r.json());
         schedule = s[u.tgId] || {};
-        showTab('schedule');
+
+        showTab('schedule'); // ← ВСЕГДА открываем Расписание
       }catch(e){
         setTimeout(init, 1000);
       }
     }
-
-    const content = document.getElementById('content');
 
     function showTab(tab){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -105,6 +104,8 @@
         });
       }
     }
+
+    const content = document.getElementById('content');
 
     function renderSchedule(){
       let html = '<div class="week-header"><div></div>';
