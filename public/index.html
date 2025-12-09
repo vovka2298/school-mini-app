@@ -27,6 +27,8 @@
     .state-2{background:#da3633;color:white}
     .slot-time{font-size:9px;opacity:0.8;margin-bottom:3px}
     .loading{text-align:center;padding:40px;color:#8b949e}
+    .error{text-align:center;padding:40px;color:#da3633}
+    .retry-btn{background:#1f6feb;color:white;border:none;padding:10px 20px;border-radius:8px;margin-top:10px;cursor:pointer}
   </style>
 </head>
 <body>
@@ -69,7 +71,7 @@
     
     // Задержка для дебаунса сохранения
     let saveTimeout = null;
-    const SAVE_DELAY = 500; // 0.5 секунды
+    const SAVE_DELAY = 300; // 0.3 секунды
 
     // Загружаем ВСЁ сразу при запуске
     async function init() {
@@ -78,6 +80,10 @@
       try {
         // Загружаем данные пользователя
         const userResponse = await fetch('/api/user');
+        if (!userResponse.ok) {
+          throw new Error('Ошибка загрузки пользователя');
+        }
+        
         const userData = await userResponse.json();
         
         if (userData.name) {
@@ -90,31 +96,39 @@
         console.log("Приложение инициализировано");
       } catch (e) {
         console.error("Ошибка инициализации:", e);
-        document.getElementById('content').innerHTML = '<div class="loading">Ошибка загрузки</div>';
+        showError("Ошибка загрузки данных. Проверьте подключение.");
       }
     }
 
     async function loadSchedule() {
       try {
         console.log("Загрузка расписания...");
-        const response = await fetch('/api/my-schedule');
+        
+        // Пробуем сначала загрузить свое расписание
+        let response = await fetch('/api/my-schedule');
         
         if (!response.ok) {
-          throw new Error('Ошибка загрузки расписания');
+          // Если не удалось, пробуем загрузить все расписания
+          response = await fetch('/api/schedules');
+          if (!response.ok) {
+            throw new Error('Ошибка загрузки расписания');
+          }
+          
+          const allSchedules = await response.json();
+          mySchedule = allSchedules[tgId] || {};
+        } else {
+          const scheduleData = await response.json();
+          mySchedule = scheduleData || {};
         }
         
-        const scheduleData = await response.json();
-        console.log("Получено расписание:", scheduleData);
-        
-        mySchedule = scheduleData || {};
+        console.log("Получено расписание:", mySchedule);
         
         // Автоматически рендерим расписание
         renderSchedule();
         
       } catch (e) {
         console.error("Ошибка загрузки расписания:", e);
-        mySchedule = {};
-        renderSchedule();
+        showError("Не удалось загрузить расписание. Попробуйте еще раз.");
       }
     }
 
@@ -140,6 +154,23 @@
       
       document.getElementById('content').innerHTML = html;
       console.log("Расписание отрендерено");
+    }
+
+    function showError(message) {
+      document.getElementById('content').innerHTML = `
+        <div class="error">
+          ${message}
+          <br>
+          <button class="retry-btn" onclick="retryLoad()">Повторить</button>
+        </div>
+      `;
+    }
+
+    function retryLoad() {
+      document.getElementById('content').innerHTML = '<div class="loading">Загрузка...</div>';
+      setTimeout(() => {
+        loadSchedule();
+      }, 500);
     }
 
     async function toggleSlot(day, time, el) {
@@ -171,12 +202,26 @@
       console.log("Сохранение расписания...", mySchedule);
       
       try {
+        // Создаем чистый объект без undefined значений
+        const cleanSchedule = {};
+        for (const day in mySchedule) {
+          if (mySchedule[day] && typeof mySchedule[day] === 'object') {
+            cleanSchedule[day] = {};
+            for (const time in mySchedule[day]) {
+              const state = mySchedule[day][time];
+              if (state !== undefined && state !== null) {
+                cleanSchedule[day][time] = state;
+              }
+            }
+          }
+        }
+        
         const response = await fetch(`/api/schedule/${tgId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(mySchedule) // Отправляем ВСЁ расписание
+          body: JSON.stringify(cleanSchedule)
         });
         
         const result = await response.json();
@@ -204,14 +249,7 @@
     }
 
     // ЗАПУСКАЕМ ВСЁ ПРИ ЗАГРУЗКЕ
-    window.addEventListener('DOMContentLoaded', init);
-    
-    // Также запускаем при полной загрузке страницы
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', init);
-    } else {
-      init();
-    }
+    document.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html>
