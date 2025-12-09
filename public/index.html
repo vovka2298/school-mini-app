@@ -17,10 +17,20 @@
     .header {
       background: #161b22;
       padding: 16px;
+      border-bottom: 1px solid #30363d;
+    }
+    
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    
+    .user-info {
       display: flex;
       align-items: center;
       gap: 14px;
-      border-bottom: 1px solid #30363d;
     }
     
     .avatar {
@@ -33,6 +43,26 @@
       align-items: center;
       justify-content: center;
       font-size: 24px;
+    }
+    
+    .refresh-btn {
+      background: #238636;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    
+    .refresh-btn:hover {
+      background: #2ea043;
+    }
+    
+    .refresh-btn:active {
+      transform: scale(0.98);
     }
     
     .tabs {
@@ -48,6 +78,7 @@
       font-weight: 600;
       cursor: pointer;
       transition: background 0.2s;
+      user-select: none;
     }
     
     .tab.active {
@@ -62,6 +93,7 @@
       justify-content: center;
       gap: 24px;
       font-size: 13px;
+      flex-wrap: wrap;
     }
     
     .legend-item {
@@ -78,8 +110,9 @@
     
     .content {
       padding: 12px;
-      height: calc(100vh - 235px);
+      height: calc(100vh - 250px);
       overflow-y: auto;
+      position: relative;
     }
     
     .week-header {
@@ -130,6 +163,12 @@
       cursor: pointer;
       transition: all 0.2s;
       overflow: hidden;
+      user-select: none;
+    }
+    
+    .slot:hover {
+      transform: scale(1.02);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     }
     
     .state-0 { background: #21262d; color: #8b949e; }
@@ -146,6 +185,7 @@
       text-align: center;
       padding: 60px 20px;
       color: #8b949e;
+      font-size: 16px;
     }
     
     .error {
@@ -154,28 +194,64 @@
       color: #da3633;
     }
     
-    button {
+    .sync-notice {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
       background: #1f6feb;
       color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      animation: fadeIn 0.3s;
+      z-index: 1000;
     }
     
-    button:hover {
-      background: #1565c0;
+    .cache-notice {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: #ffa500;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      animation: fadeIn 0.3s;
+      z-index: 1000;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    button {
+      font-family: inherit;
+    }
+    
+    #lastSync {
+      font-size: 11px;
+      color: #8b949e;
+      text-align: center;
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <div class="avatar">👨‍🏫</div>
-    <div>
-      <h3 id="userName">Загрузка...</h3>
-      <p>Кабинет преподавателя</p>
+    <div class="header-top">
+      <div class="user-info">
+        <div class="avatar">👨‍🏫</div>
+        <div>
+          <h3 id="userName">Загрузка...</h3>
+          <p>Кабинет преподавателя</p>
+        </div>
+      </div>
+      <button class="refresh-btn" id="refreshBtn" onclick="forceRefresh()">
+        🔄 Обновить
+      </button>
     </div>
+    <div id="lastSync"></div>
   </div>
   
   <div class="tabs">
@@ -213,31 +289,181 @@
     
     // Данные
     let schedule = {};
+    let lastScheduleHash = '';
+    let isSaving = false;
+    let lastUpdateTime = 0;
     const MY_ID = "913096324";
+    const STORAGE_KEY = 'teacher_schedule_v2';
+    const CACHE_TTL = 30000; // 30 секунд
+    
+    // ===== УТИЛИТЫ =====
+    
+    // Генерация хэша расписания
+    function getScheduleHash(sched) {
+      let hash = '';
+      FULL_DAYS.forEach(day => {
+        TIMES.forEach(time => {
+          const state = sched[day]?.[time] || 0;
+          hash += `${day}-${time}:${state}|`;
+        });
+      });
+      return hash;
+    }
+    
+    // Сохранение в кеш
+    function saveToCache(data) {
+      try {
+        const cache = {
+          data: data,
+          timestamp: Date.now(),
+          hash: getScheduleHash(data)
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
+      } catch (e) {
+        console.warn("Не удалось сохранить в кеш:", e);
+      }
+    }
+    
+    // Загрузка из кеша
+    function loadFromCache() {
+      try {
+        const cached = localStorage.getItem(STORAGE_KEY);
+        if (!cached) return null;
+        
+        const cache = JSON.parse(cached);
+        const now = Date.now();
+        
+        if (now - cache.timestamp < CACHE_TTL) {
+          return cache.data;
+        }
+      } catch (e) {
+        console.warn("Ошибка загрузки из кеша:", e);
+      }
+      return null;
+    }
+    
+    // Показать уведомление
+    function showNotice(text, color = '#1f6feb', duration = 2000) {
+      const notice = document.createElement('div');
+      notice.className = 'sync-notice';
+      notice.style.background = color;
+      notice.textContent = text;
+      document.body.appendChild(notice);
+      
+      setTimeout(() => {
+        notice.style.opacity = '0';
+        notice.style.transform = 'translateY(10px)';
+        setTimeout(() => document.body.removeChild(notice), 300);
+      }, duration);
+    }
+    
+    // Обновить время последней синхронизации
+    function updateLastSyncTime() {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ru-RU', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      document.getElementById('lastSync').textContent = `Последнее обновление: ${timeStr}`;
+    }
+    
+    // ===== ОСНОВНЫЕ ФУНКЦИИ =====
     
     // Загрузка расписания
-    async function loadSchedule() {
+    async function loadSchedule(force = false) {
       try {
-        console.log("Загрузка расписания...");
-        const response = await fetch('/api/my-schedule');
+        const refreshBtn = document.getElementById('refreshBtn');
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = '⏳ Загрузка...';
+        
+        // Если не форсируем и есть кеш - показываем его
+        if (!force) {
+          const cached = loadFromCache();
+          if (cached) {
+            schedule = cached;
+            renderSchedule();
+            showNotice("Данные из кеша", "#ffa500", 1500);
+          }
+        }
+        
+        // Загружаем с сервера
+        const url = `/api/my-schedule?t=${Date.now()}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`Ошибка ${response.status}`);
+        }
+        
         const data = await response.json();
-        schedule = data;
-        console.log("Расписание загружено:", schedule);
-        renderSchedule();
+        
+        // Проверяем изменились ли данные
+        const newHash = getScheduleHash(data);
+        const shouldUpdate = force || newHash !== lastScheduleHash;
+        
+        if (shouldUpdate) {
+          schedule = data;
+          lastScheduleHash = newHash;
+          lastUpdateTime = data._timestamp || Date.now();
+          
+          // Сохраняем в кеш
+          saveToCache(data);
+          
+          // Рендерим
+          renderSchedule();
+          updateLastSyncTime();
+          
+          if (!force) {
+            showNotice("Расписание обновлено");
+          }
+          
+          console.log("✅ Расписание загружено (сервер)");
+        } else {
+          console.log("ℹ️ Данные не изменились");
+        }
+        
       } catch (error) {
-        console.error("Ошибка:", error);
-        document.getElementById('content').innerHTML = `
-          <div class="error">
-            Ошибка загрузки расписания
-            <br>
-            <button onclick="loadSchedule()">Повторить</button>
-          </div>
-        `;
+        console.error("❌ Ошибка загрузки:", error);
+        
+        // Пробуем показать кеш при ошибке
+        const cached = loadFromCache();
+        if (cached && Object.keys(cached).length > 0) {
+          schedule = cached;
+          renderSchedule();
+          showNotice("Оффлайн режим (данные из кеша)", "#ffa500", 3000);
+        } else {
+          document.getElementById('content').innerHTML = `
+            <div class="error">
+              Ошибка загрузки расписания
+              <br>
+              <button onclick="forceRefresh()" style="margin-top: 20px;">Повторить</button>
+            </div>
+          `;
+        }
+      } finally {
+        const refreshBtn = document.getElementById('refreshBtn');
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Обновить';
       }
+    }
+    
+    // Принудительное обновление
+    async function forceRefresh() {
+      showNotice("Принудительное обновление...", "#1f6feb");
+      await loadSchedule(true);
     }
     
     // Рендер расписания
     function renderSchedule() {
+      if (Object.keys(schedule).length === 0) {
+        document.getElementById('content').innerHTML = `
+          <div class="loading">
+            Расписание пустое. Нажмите на ячейки, чтобы настроить.
+          </div>
+        `;
+        return;
+      }
+      
       let html = '<div class="week-header"><div></div>';
       DAYS.forEach(d => html += `<div class="day-name">${d}</div>`);
       html += '</div>';
@@ -247,7 +473,7 @@
         DAYS.forEach((_, i) => {
           const day = FULL_DAYS[i];
           const state = schedule[day]?.[time] || 0;
-          html += `<div class="slot state-${state}" onclick="toggleSlot('${day}', '${time}')">
+          html += `<div class="slot state-${state}" onclick="toggleSlot('${day}', '${time}', this)">
             <div class="slot-time">${time}</div>
             <div>${TEXTS[state]}</div>
           </div>`;
@@ -259,25 +485,54 @@
     }
     
     // Переключение ячейки
-    async function toggleSlot(day, time) {
-      if (!schedule[day]) schedule[day] = {};
-      const current = schedule[day][time] || 0;
-      const next = (current + 1) % 3;
-      schedule[day][time] = next;
+    async function toggleSlot(day, time, element) {
+      if (isSaving) {
+        showNotice("Подождите, идет сохранение...", "#ffa500", 1000);
+        return;
+      }
       
-      // Обновляем UI
-      renderSchedule();
+      isSaving = true;
       
-      // Сохраняем
       try {
-        await fetch(`/api/schedule/${MY_ID}`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(schedule)
-        });
-        console.log("Сохранено:", day, time, "=", next);
-      } catch (error) {
-        console.error("Ошибка сохранения:", error);
+        // Локальное обновление
+        if (!schedule[day]) schedule[day] = {};
+        const current = schedule[day][time] || 0;
+        const next = (current + 1) % 3;
+        schedule[day][time] = next;
+        
+        // Мгновенное обновление UI
+        element.className = `slot state-${next}`;
+        element.querySelector('div:last-child').textContent = TEXTS[next];
+        
+        // Сохраняем в кеш сразу
+        saveToCache(schedule);
+        lastScheduleHash = getScheduleHash(schedule);
+        
+        // Отложенное сохранение на сервер
+        setTimeout(async () => {
+          try {
+            const response = await fetch(`/api/schedule/${MY_ID}?t=${Date.now()}`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(schedule)
+            });
+            
+            const result = await response.json();
+            if (result.ok) {
+              showNotice("Сохранено", "#238636", 1000);
+              lastUpdateTime = result._timestamp || Date.now();
+              updateLastSyncTime();
+            }
+          } catch (saveError) {
+            console.error("Ошибка сохранения на сервер:", saveError);
+            showNotice("Ошибка сети", "#da3633", 2000);
+          }
+        }, 500); // Задержка 500ms для группировки изменений
+        
+      } finally {
+        setTimeout(() => {
+          isSaving = false;
+        }, 300);
       }
     }
     
@@ -305,7 +560,7 @@
     // Загружаем пользователя
     async function loadUser() {
       try {
-        const response = await fetch('/api/user');
+        const response = await fetch(`/api/user?t=${Date.now()}`);
         const user = await response.json();
         document.getElementById('userName').textContent = user.name || "Владимир";
       } catch (error) {
@@ -313,11 +568,53 @@
       }
     }
     
-    // Запуск
-    window.onload = function() {
-      loadUser();
-      loadSchedule();
-    };
+    // Автоматическая синхронизация
+    function startAutoSync() {
+      // Проверка каждые 60 секунд
+      setInterval(async () => {
+        if (!isSaving && document.visibilityState === 'visible') {
+          console.log("🔄 Автоматическая проверка обновлений");
+          await loadSchedule();
+        }
+      }, 60000);
+      
+      // При возвращении на вкладку
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          console.log("📱 Страница активна, проверяем обновления");
+          loadSchedule();
+        }
+      });
+    }
+    
+    // ===== ЗАПУСК ПРИЛОЖЕНИЯ =====
+    
+    async function init() {
+      console.log("🚀 Запуск приложения...");
+      
+      await loadUser();
+      await loadSchedule(true); // Принудительная загрузка при старте
+      startAutoSync();
+      
+      // Обновляем время каждую минуту
+      setInterval(updateLastSyncTime, 60000);
+      
+      console.log("✅ Приложение запущено");
+    }
+    
+    // Запускаем когда страница загружена
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+    
+    // Глобальные функции для кнопок
+    window.forceRefresh = forceRefresh;
+    window.showSchedule = showSchedule;
+    window.showBookings = showBookings;
+    window.showSubjects = showSubjects;
+    window.toggleSlot = toggleSlot;
   </script>
 </body>
 </html>
