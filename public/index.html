@@ -23,7 +23,7 @@
     .time-row{display:flex;align-items:center;margin:3px 0}
     .time-label{width:68px;text-align:right;font-size:13px;color:#8b949e;padding-right:12px;flex:none}
     .slots{display:flex;flex:1}
-    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;flex:none;overflow:hidden}
+    .slot{width:80px;height:56px;margin:0 4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:bold;cursor:pointer;transition:background .2s,color .2s;flex:none;box-sizing:border-box;overflow:hidden}
     .state-0{background:#21262d;color:#8b949e}
     .state-1{background:#238636;color:white}
     .state-2{background:#da3633;color:white}
@@ -50,11 +50,9 @@
     <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
   <div class="grid" id="content"></div>
-
   <script>
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
-
     const DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
     const FULL_DAYS = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
     const TIMES = [];
@@ -63,10 +61,8 @@
       if(h<22) TIMES.push(`${h.toString().padStart(2,'0')}:30`);
     }
     const TEXTS = ['Не работаю', 'Свободен', 'Занят'];
-
     let user = null;
     let schedule = {};
-
     async function init(){
       try{
         const u = await fetch('/api/user').then(r=>r.json());
@@ -74,32 +70,21 @@
         user = u;
         document.getElementById('userName').textContent = u.name;
         if(u.photo) document.getElementById('avatar').src = u.photo;
-
         const s = await fetch('/api/schedules').then(r=>r.json());
         schedule = s[u.tgId] || {};
-        renderSchedule();
+        showTab('schedule'); // ← ЭТО ЗАСТАВЛЯЕТ РАСПИСАНИЕ ОТКРЫВАТЬСЯ СРАЗУ
       }catch(e){
         setTimeout(init, 1000);
       }
     }
-
     const content = document.getElementById('content');
-
     function showTab(tab){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
       event.target.classList.add('active');
       if(tab==='schedule') renderSchedule();
       else if(tab==='bookings') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут</p>';
-      else if(tab==='subjects') {
-        fetch('subjects.html').then(r=>r.text()).then(html=>{
-          content.innerHTML = html;
-          const script = document.createElement('script');
-          script.src = '/js/subjects.js';
-          document.body.appendChild(script);
-        });
-      }
+      else if(tab==='subjects') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Предметы</p>';
     }
-
     function renderSchedule(){
       let html = '<div class="week-header"><div></div>';
       DAYS.forEach(d=>html+=`<div class="day-name">${d}</div>`);
@@ -118,7 +103,6 @@
       });
       content.innerHTML = html;
     }
-
     async function toggle(day,time,element){
       if(!schedule[day]) schedule[day] = {};
       const current = schedule[day][time] ?? 0;
@@ -126,15 +110,12 @@
       schedule[day][time] = next;
       element.className = `slot state-${next}`;
       element.querySelector('.slot-text').textContent = TEXTS[next];
-
       await fetch(`/api/schedule/${user.tgId}`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({[day]:schedule[day]})
       });
     }
-
-    init();
   </script>
 </body>
 </html>
