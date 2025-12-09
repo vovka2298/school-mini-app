@@ -81,8 +81,7 @@
 
         const s = await fetch('/api/schedules').then(r=>r.json());
         schedule = s[u.tgId] || {};
-
-        showTab('schedule'); // ← ВСЕГДА открываем Расписание
+        renderSchedule(); // ← СРАЗУ открываем расписание
       }catch(e){
         setTimeout(init, 1000);
       }
@@ -91,18 +90,9 @@
     function showTab(tab){
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
       event.target.classList.add('active');
-      
       if(tab==='schedule') renderSchedule();
-      else if(tab==='bookings') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут доступны</p>';
-      else if(tab==='subjects'){
-        fetch('subjects.html').then(r=>r.text()).then(html=>{
-          content.innerHTML = html;
-          const script = document.createElement('script');
-          script.src = 'js/subjects.js';
-          script.onload = () => loadProfile();
-          document.body.appendChild(script);
-        });
-      }
+      else if(tab==='bookings') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Заявки скоро будут</p>';
+      else if(tab==='subjects') content.innerHTML = '<p style="text-align:center;padding:60px;color:#8b949e">Предметы</p>';
     }
 
     const content = document.getElementById('content');
