@@ -91,22 +91,3 @@ app.get('*', (req, res) => {
 });
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log('Сервер запущен — данные сохраняются навсегда!'));
-package.json
-{
-  "name": "school-mini-app",
-  "version": "1.0.0",
-  "description": "Кабинет расписания для преподавателей",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "@upstash/redis": "^1.34.0",
-    "express": "^4.21.0"
-  },
-  "engines": {
-    "node": "20.x"
-  },
-  "author": "Владимир",
-  "license": "MIT"
-}
