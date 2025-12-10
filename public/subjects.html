@@ -203,7 +203,7 @@
     </button>
     
     <h1>Мои предметы</h1>
-    <p class="subtitle">Выберите предметы, которые вы преподаете</p>
+    <p class="subtitle">Выберите теги предметов, которые вы преподаете</p>
     
     <div class="card">
       <div class="section-title">Предметы</div>
@@ -232,16 +232,25 @@
   </div>
 
   <script>
-    // Конфигурация Supabase
-    const SUPABASE_URL = 'https://rtywenfvaoxsjdkulmdk.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_WhiVd5day72hRoTKiFtiIQ_sP2wu4_S';
+    // Telegram Web App
+    if (typeof Telegram !== 'undefined') {
+      Telegram.WebApp.ready();
+      Telegram.WebApp.expand();
+    }
     
     // Данные
+    const SUBJECTS = [
+      "МатематикаБаза", "МатематикаОГЭ", "МатематикаЕГЭ", "Математика5_8", "Математика9_11",
+      "Физика5_8", "ФизикаОГЭ", "ФизикаЕГЭ", "Физика9_11", "Высшая математика", "Олимпиада",
+      "Информатика", "Программирование", "Химия", "Биология", "Русский язык",
+      "Английский язык", "Обществознание", "История", "География"
+    ];
+    
     let profile = {
       subjects: [],
       gender: "Мужской"
     };
-    let currentUser = null;
+    const MY_ID = "913096324";
     let isSaving = false;
     
     // Показать уведомление
@@ -265,54 +274,25 @@
       }, 2000);
     }
     
-    // Загрузка пользователя
-    async function loadUser() {
-      try {
-        // Получаем Telegram ID
-        let tgId = '913096324';
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('tgId')) tgId = urlParams.get('tgId');
-        
-        // Запрос к Supabase
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/users?telegram_id=eq.${tgId}&select=*`,
-          {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        
-        if (response.ok) {
-          const users = await response.json();
-          if (users && users.length > 0) {
-            currentUser = users[0];
-            console.log('✅ Пользователь найден:', currentUser);
-            return true;
-          }
-        }
-      } catch (error) {
-        console.error('Ошибка загрузки пользователя:', error);
-      }
-      return false;
-    }
-    
     // Загрузка профиля
     async function loadProfile() {
       try {
         console.log("Загрузка профиля...");
+        const response = await fetch(`/api/profile/${MY_ID}?t=${Date.now()}`);
         
-        // Сначала загружаем пользователя
-        const userLoaded = await loadUser();
-        if (!userLoaded) {
-          showNotice("Пользователь не найден", "error");
-          return;
+        if (!response.ok) {
+          throw new Error('Ошибка загрузки профиля');
         }
         
-        // Загружаем предметы из базы
-        await loadSubjectsFromDB();
+        const data = await response.json();
+        console.log("Профиль получен:", data);
+        
+        // Обновляем профиль
+        profile.subjects = Array.isArray(data.subjects) ? data.subjects : [];
+        profile.gender = data.gender || "Мужской";
+        
+        // Рендерим предметы
+        renderSubjects();
         
         // Устанавливаем пол
         document.querySelectorAll('input[name="gender"]').forEach(radio => {
@@ -321,67 +301,29 @@
         
       } catch (error) {
         console.error("Ошибка загрузки профиля:", error);
+        // Если ошибка, используем пустой профиль
+        renderSubjects();
         showNotice("Ошибка загрузки профиля", "error");
       }
     }
     
-    // Загрузка предметов из Supabase
-    async function loadSubjectsFromDB() {
-      try {
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/subjects?select=*&order=name.asc`,
-          {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        
-        if (response.ok) {
-          const subjects = await response.json();
-          console.log("Предметы получены:", subjects);
-          
-          // Рендерим предметы
-          renderSubjects(subjects);
-          
-        } else {
-          throw new Error('Ошибка загрузки предметов');
-        }
-        
-      } catch (error) {
-        console.error("Ошибка загрузки предметов:", error);
-        // Если ошибка, используем стандартный список
-        const defaultSubjects = [
-          "МатематикаБаза", "МатематикаОГЭ", "МатематикаЕГЭ", "Математика5_8", "Математика9_11",
-          "Физика5_8", "ФизикаОГЭ", "ФизикаЕГЭ", "Физика9_11", "Высшая математика", "Олимпиада",
-          "Информатика", "Программирование", "Химия", "Биология", "Русский язык",
-          "Английский язык", "Обществознание", "История", "География"
-        ];
-        
-        const subjects = defaultSubjects.map(name => ({ name }));
-        renderSubjects(subjects);
-      }
-    }
-    
     // Рендер списка предметов
-    function renderSubjects(subjects) {
+    function renderSubjects() {
       const container = document.getElementById('subjectsList');
       
       if (!container) return;
       
       const html = `
         <div class="subjects-grid">
-          ${subjects.map(subject => {
-            const isChecked = profile.subjects.includes(subject.name);
-            const displayName = subject.name.replace(/_/g, ' ');
+          ${SUBJECTS.map(subject => {
+            const isChecked = profile.subjects.includes(subject);
+            const displayName = subject.replace(/_/g, ' ');
             
             return `
               <label class="subject-item">
                 <input type="checkbox" 
                        ${isChecked ? 'checked' : ''}
-                       onchange="toggleSubject('${subject.name}', this.checked)">
+                       onchange="toggleSubject('${subject}', this.checked)">
                 <span class="subject-name">${displayName}</span>
               </label>
             `;
@@ -407,7 +349,7 @@
     
     // Сохранение профиля
     async function saveProfile() {
-      if (isSaving || !currentUser) return;
+      if (isSaving) return;
       
       isSaving = true;
       const saveBtn = document.getElementById('saveBtn');
@@ -424,24 +366,11 @@
         
         console.log("Сохранение профиля:", profile);
         
-        // Сохраняем в таблицу users (обновляем поля subjects и gender)
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/users?id=eq.${currentUser.id}`,
-          {
-            method: 'PATCH',
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=representation'
-            },
-            body: JSON.stringify({
-              subjects: profile.subjects,
-              gender: profile.gender,
-              updated_at: new Date().toISOString()
-            })
-          }
-        );
+        const response = await fetch(`/api/profile/${MY_ID}?t=${Date.now()}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(profile)
+        });
         
         if (!response.ok) {
           throw new Error('Ошибка сохранения');
@@ -454,7 +383,7 @@
         
         // Возвращаемся через секунду
         setTimeout(() => {
-          window.location.href = `/?tgId=${currentUser.telegram_id}`;
+          window.location.href = '/';
         }, 1000);
         
       } catch (error) {
