@@ -1,10 +1,11 @@
 {
   "name": "school-mini-app",
   "version": "1.0.0",
-  "description": "Кабинет преподавателя - индивидуальное приложение",
+  "description": "Кабинет преподавателя с сохранением в Supabase",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.21.0",
