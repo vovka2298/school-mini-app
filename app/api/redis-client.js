@@ -1,4 +1,3 @@
-// app/api/redis-client.js
 import { createClient } from 'redis';
 import RedisSchema from '../../lib/redis-schema.js';
 
