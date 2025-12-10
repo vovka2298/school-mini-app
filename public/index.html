@@ -511,7 +511,7 @@
         // Отложенное сохранение на сервер
         setTimeout(async () => {
           try {
-            const response = await fetch(`/api/schedule/${MY_ID}?t=${Date.now()}&test=1`, {
+            const response = await fetch(`/api/schedule/${MY_ID}?t=${Date.now()}`, {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify(schedule)
