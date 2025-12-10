@@ -1,7 +1,7 @@
-import { getSystemStats } from '@/lib/redis';
+import { getSystemStats } from '../../../lib/redis';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request) {
   try {
     const stats = await getSystemStats();
     
