@@ -1,4 +1,4 @@
-import { getAllTeachers, getTeacherStudents } from '../redis-client.js';
+import { getAllTeachers, getTeacherStudents } from '../../redis-client.js';
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
