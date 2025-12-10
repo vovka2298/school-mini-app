@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function AuthChecker({ children }) {
   const [authStatus, setAuthStatus] = useState('checking');
   const [userData, setUserData] = useState(null);
-  const router = useRouter();
 
   useEffect(() => {
     checkAuth();
@@ -14,13 +12,11 @@ export default function AuthChecker({ children }) {
 
   const checkAuth = async () => {
     try {
-      // Получаем данные из Telegram Web App
       if (window.Telegram && window.Telegram.WebApp) {
         const tg = window.Telegram.WebApp;
         const telegramUser = tg.initDataUnsafe?.user;
         
         if (telegramUser && telegramUser.id) {
-          // Проверяем статус пользователя
           const response = await fetch(`/api/auth/check?telegramId=${telegramUser.id}`);
           const data = await response.json();
           
@@ -42,7 +38,6 @@ export default function AuthChecker({ children }) {
           setAuthStatus('no_telegram');
         }
       } else {
-        // Если открыто не в Telegram
         setAuthStatus('not_in_telegram');
       }
     } catch (error) {
@@ -51,7 +46,6 @@ export default function AuthChecker({ children }) {
     }
   };
 
-  // Состояния загрузки
   if (authStatus === 'checking') {
     return (
       <div style={styles.container}>
@@ -63,7 +57,6 @@ export default function AuthChecker({ children }) {
     );
   }
 
-  // Пользователь не в Telegram
   if (authStatus === 'not_in_telegram') {
     return (
       <div style={styles.container}>
@@ -76,7 +69,6 @@ export default function AuthChecker({ children }) {
     );
   }
 
-  // Пользователь не найден (не регистрировался)
   if (authStatus === 'not_found') {
     return (
       <div style={styles.container}>
@@ -101,7 +93,6 @@ export default function AuthChecker({ children }) {
     );
   }
 
-  // Заявка на рассмотрении
   if (authStatus === 'pending') {
     return (
       <div style={styles.container}>
@@ -115,7 +106,6 @@ export default function AuthChecker({ children }) {
     );
   }
 
-  // Ошибка
   if (authStatus === 'error') {
     return (
       <div style={styles.container}>
@@ -134,12 +124,10 @@ export default function AuthChecker({ children }) {
     );
   }
 
-  // Доступ одобрен - показываем интерфейс
   if (authStatus === 'approved') {
     return children(userData);
   }
 
-  // На всякий случай
   return (
     <div style={styles.container}>
       <div style={styles.message}>
