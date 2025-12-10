@@ -276,7 +276,7 @@
 
     <script>
         // ================= КОНФИГУРАЦИЯ =================
-        const SUPABASE_URL = 'https://rtywenfvaoxsjdku1mdk.supabase.co';
+        const SUPABASE_URL = 'https://rtywenfvaoxsjdkulmdk.supabase.co'; // ВАЖНО: БУКВА "l" вместо "1"
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eXd1bmZ2YW94c2pka3UxbWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU2MDQ4MDAsImV4cCI6MjA1MTE4MDgwMH0.gQ99aMJ_sUnOMR4XQm54gOq3MSF6hjePjEn4nyI6mFg';
         
         // Дни недели для отображения
@@ -292,7 +292,6 @@
         // Текущий пользователь и состояние
         let currentUser = null;
         let currentSchedule = [];
-        let pendingChanges = {};
         
         // ================= ИНИЦИАЛИЗАЦИЯ =================
         document.addEventListener('DOMContentLoaded', init);
@@ -319,27 +318,33 @@
         // ================= ЗАГРУЗКА ПОЛЬЗОВАТЕЛЯ =================
         async function loadUser() {
             try {
-                // Получаем Telegram ID из URL или WebApp
-                let tgId = '913096324'; // Твой ID для теста
+                console.log('🔄 Загружаю пользователя...');
                 
-                // Пробуем получить из Telegram WebApp
-                if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe) {
-                    const tgUser = Telegram.WebApp.initDataUnsafe.user;
-                    if (tgUser && tgUser.id) {
-                        tgId = tgUser.id.toString();
-                    }
-                }
+                // Получаем Telegram ID
+                let tgId = '913096324'; // Твой ID по умолчанию
                 
-                // Пробуем получить из URL параметров
+                // 1. Из URL параметров
                 const urlParams = new URLSearchParams(window.location.search);
                 const urlTgId = urlParams.get('tgId');
                 if (urlTgId) {
                     tgId = urlTgId;
+                    console.log('📱 ID из URL:', tgId);
                 }
                 
-                console.log('🔄 Загружаю пользователя с ID:', tgId);
+                // 2. Из Telegram WebApp
+                if (window.Telegram && Telegram.WebApp) {
+                    const tgUser = Telegram.WebApp.initDataUnsafe?.user;
+                    if (tgUser && tgUser.id) {
+                        tgId = tgUser.id.toString();
+                        console.log('🤖 ID из Telegram:', tgId);
+                    }
+                }
                 
-                // Прямой запрос к Supabase
+                console.log('🎯 Использую ID:', tgId);
+                
+                // Пробуем загрузить из Supabase
+                console.log('🌐 Подключаюсь к Supabase:', SUPABASE_URL);
+                
                 const response = await fetch(
                     `${SUPABASE_URL}/rest/v1/users?telegram_id=eq.${tgId}&select=*`,
                     {
@@ -390,7 +395,6 @@
                 
                 console.log('📅 Загружаю расписание для teacher_id:', currentUser.id);
                 
-                // Прямой запрос к Supabase
                 const response = await fetch(
                     `${SUPABASE_URL}/rest/v1/schedules?teacher_id=eq.${currentUser.id}&select=*&order=day_of_week.asc,time_slot.asc`,
                     {
@@ -426,12 +430,13 @@
             console.log('🎨 Отрисовываю расписание...');
             
             const container = document.getElementById('scheduleContainer');
-            container.innerHTML = '';
-            
-            // Создаем заголовок с днями недели
             const weekHeader = document.getElementById('weekHeader');
+            
+            // Очищаем контейнеры
+            container.innerHTML = '';
             weekHeader.innerHTML = '<div class="time-label"></div>';
             
+            // Добавляем дни недели в заголовок
             DAYS.forEach((day, index) => {
                 const dayDiv = document.createElement('div');
                 dayDiv.className = 'day-name';
@@ -495,6 +500,7 @@
                 
                 if (!currentUser) {
                     console.error('❌ Нет пользователя для сохранения');
+                    showError('Ошибка: пользователь не найден');
                     return;
                 }
                 
@@ -566,7 +572,7 @@
                 
             } catch (error) {
                 console.error('❌ Ошибка сохранения:', error);
-                alert('Ошибка сохранения изменений');
+                alert('Ошибка сохранения изменений. Проверьте консоль для деталей.');
             }
         }
         
@@ -596,24 +602,34 @@
             ];
             
             // Показываем уведомление о кэше
-            document.getElementById('cacheNotice').style.display = 'block';
-            setTimeout(() => {
-                document.getElementById('cacheNotice').style.display = 'none';
-            }, 3000);
+            const cacheNotice = document.getElementById('cacheNotice');
+            if (cacheNotice) {
+                cacheNotice.style.display = 'block';
+                setTimeout(() => {
+                    cacheNotice.style.display = 'none';
+                }, 3000);
+            }
             
             renderSchedule(demoData);
-            document.getElementById('loading').style.display = 'none';
+            
+            // Скрываем загрузку
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                loadingElement.style.display = 'none';
+            }
         }
         
         function showSyncNotice() {
             const notice = document.getElementById('syncNotice');
-            notice.style.display = 'block';
-            
-            setTimeout(() => {
-                notice.style.display = 'none';
-            }, 2000);
-            
-            updateLastSyncTime();
+            if (notice) {
+                notice.style.display = 'block';
+                
+                setTimeout(() => {
+                    notice.style.display = 'none';
+                }, 2000);
+                
+                updateLastSyncTime();
+            }
         }
         
         function updateLastSyncTime() {
@@ -623,31 +639,42 @@
                 minute: '2-digit' 
             });
             
-            document.getElementById('lastSync').textContent = `Обновлено: ${timeStr}`;
+            const lastSyncElement = document.getElementById('lastSync');
+            if (lastSyncElement) {
+                lastSyncElement.textContent = `Обновлено: ${timeStr}`;
+            }
         }
         
         function showError(message) {
             const container = document.getElementById('scheduleContainer');
-            container.innerHTML = `
-                <div class="error">
-                    <h3>❌ Ошибка</h3>
-                    <p>${message}</p>
-                    <button onclick="location.reload()" style="
-                        background: #238636;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 8px;
-                        margin-top: 15px;
-                        cursor: pointer;
-                    ">Повторить</button>
-                </div>
-            `;
+            if (container) {
+                container.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Ошибка</h3>
+                        <p>${message}</p>
+                        <button onclick="location.reload()" style="
+                            background: #238636;
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            border-radius: 8px;
+                            margin-top: 15px;
+                            cursor: pointer;
+                        ">Повторить</button>
+                    </div>
+                `;
+                
+                // Скрываем загрузку
+                const loadingElement = document.getElementById('loading');
+                if (loadingElement) {
+                    loadingElement.style.display = 'none';
+                }
+            }
         }
         
         function forceRefresh() {
             console.log('🔄 Принудительное обновление...');
-            loadSchedule();
+            location.reload();
         }
         
         function showSchedule() {
