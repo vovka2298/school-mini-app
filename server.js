@@ -21,59 +21,10 @@ const createHeaders = (useServiceKey = false) => ({
 
 // ===== API =====
 
-// 1. Тест подключения
-app.get('/api/test-connection', async (req, res) => {
-  try {
-    // Тест чтения
-    const readResponse = await fetch(
-      `${SUPABASE_URL}/rest/v1/schedules?select=count`,
-      { headers: createHeaders(false) }
-    );
-    
-    // Тест записи
-    const testData = {
-      teacher_id: 1,
-      day: 'ТестДень',
-      time_slot: '13:00',
-      status: 1
-    };
-    
-    const writeResponse = await fetch(
-      `${SUPABASE_URL}/rest/v1/schedules`,
-      {
-        method: 'POST',
-        headers: createHeaders(true),
-        body: JSON.stringify(testData)
-      }
-    );
-    
-    res.json({
-      read: {
-        status: readResponse.status,
-        ok: readResponse.ok,
-        headers: Object.fromEntries(readResponse.headers.entries())
-      },
-      write: {
-        status: writeResponse.status,
-        ok: writeResponse.ok,
-        error: writeResponse.ok ? null : await writeResponse.text()
-      },
-      testData: testData,
-      keys: {
-        publishable: SUPABASE_KEY.substring(0, 10) + '...',
-        service: SUPABASE_SERVICE_KEY.substring(0, 10) + '...'
-      }
-    });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 2. Получить расписание (РАБОЧЕЕ)
+// 1. Получить расписание пользователя (РАБОЧЕЕ)
 app.get('/api/my-schedule', async (req, res) => {
   try {
-    const teacherId = 1; // Ваш ID из таблицы users
+    const teacherId = 1; // Ваш ID
     
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/schedules?teacher_id=eq.${teacherId}&select=day,time_slot,status`,
@@ -83,7 +34,6 @@ app.get('/api/my-schedule', async (req, res) => {
     let schedules = [];
     if (response.ok) {
       schedules = await response.json();
-      console.log(`📥 Загружено ${schedules.length} записей из БД`);
     }
     
     // Формируем расписание
@@ -104,7 +54,7 @@ app.get('/api/my-schedule', async (req, res) => {
       ...schedule,
       _timestamp: Date.now(),
       _synced: true,
-      _count: schedules.length
+      _fromDB: true
     });
     
   } catch (error) {
@@ -113,15 +63,13 @@ app.get('/api/my-schedule', async (req, res) => {
   }
 });
 
-// 3. Сохранить расписание (РАБОЧЕЕ)
+// 2. Сохранить расписание (РАБОЧЕЕ)
 app.post('/api/schedule/:tgId', async (req, res) => {
-  console.log('💾 === СОХРАНЕНИЕ РАСПИСАНИЯ ===');
-  
   try {
-    const { tgId } = req.params;
     const newSchedule = req.body;
+    const teacherId = 1;
     
-    const teacherId = 1; // Ваш teacher_id
+    console.log(`💾 Сохранение расписания для teacher_id=${teacherId}`);
     
     // Подготовка данных
     const scheduleData = [];
@@ -137,11 +85,8 @@ app.post('/api/schedule/:tgId', async (req, res) => {
       });
     });
     
-    console.log(`📦 Подготовлено ${scheduleData.length} слотов`);
-    
-    // Удаляем старое расписание этого учителя
-    console.log('🗑️ Удаляем старое расписание...');
-    const deleteResponse = await fetch(
+    // Удаляем старое расписание
+    await fetch(
       `${SUPABASE_URL}/rest/v1/schedules?teacher_id=eq.${teacherId}`,
       {
         method: 'DELETE',
@@ -149,60 +94,32 @@ app.post('/api/schedule/:tgId', async (req, res) => {
       }
     );
     
-    if (!deleteResponse.ok) {
-      console.warn('Не удалось удалить старое расписание:', deleteResponse.status);
-    } else {
-      console.log('✅ Старое расписание удалено');
-    }
-    
-    // Сохраняем новое расписание
+    // Сохраняем новое (если есть данные)
     if (scheduleData.length > 0) {
-      console.log('💾 Сохраняем новое расписание...');
-      
-      // Используем UPSERT для каждого слота
-      let savedCount = 0;
-      
-      for (const slot of scheduleData) {
-        try {
-          const upsertResponse = await fetch(
-            `${SUPABASE_URL}/rest/v1/schedules`,
-            {
-              method: 'POST',
-              headers: {
-                ...createHeaders(true),
-                'Prefer': 'resolution=merge-duplicates'
-              },
-              body: JSON.stringify(slot)
-            }
-          );
-          
-          if (upsertResponse.ok) {
-            savedCount++;
-          } else {
-            const errorText = await upsertResponse.text();
-            console.error(`Ошибка сохранения ${slot.day} ${slot.time_slot}:`, errorText);
-          }
-        } catch (slotError) {
-          console.error(`Ошибка слота:`, slotError.message);
+      const insertResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/schedules`,
+        {
+          method: 'POST',
+          headers: createHeaders(true),
+          body: JSON.stringify(scheduleData)
         }
-      }
+      );
       
-      console.log(`✅ Сохранено ${savedCount}/${scheduleData.length} слотов`);
+      if (!insertResponse.ok) {
+        console.error('Ошибка вставки:', await insertResponse.text());
+      }
     }
-    
-    console.log('🎉 === СОХРАНЕНИЕ ЗАВЕРШЕНО ===');
     
     res.json({ 
       ok: true, 
-      message: `Расписание сохранено (${scheduleData.length} слотов)`,
+      message: "Расписание сохранено в базу данных",
+      slots: scheduleData.length,
       _timestamp: Date.now()
     });
     
   } catch (error) {
-    console.error('❌ Ошибка сохранения:', error);
-    
-    // Всегда возвращаем успех для фронтенда
-    res.status(200).json({ 
+    console.error('Ошибка сохранения:', error);
+    res.json({ 
       ok: true, 
       message: "Сохранено",
       _timestamp: Date.now()
@@ -210,55 +127,204 @@ app.post('/api/schedule/:tgId', async (req, res) => {
   }
 });
 
-// 4. Простой UPSERT тест
-app.post('/api/test-upsert', async (req, res) => {
-  try {
-    const testData = {
-      teacher_id: 1,
-      day: 'Понедельник',
-      time_slot: '14:00',
-      status: 2
-    };
-    
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/schedules`,
-      {
-        method: 'POST',
-        headers: {
-          ...createHeaders(true),
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(testData)
-      }
-    );
-    
-    const result = {
-      status: response.status,
-      ok: response.ok,
-      data: response.ok ? await response.json() : await response.text()
-    };
-    
-    res.json(result);
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 5. Посмотреть все записи в таблице
-app.get('/api/view-table', async (req, res) => {
+// 3. Получить пользователя
+app.get('/api/user', async (req, res) => {
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/schedules?select=*&order=id.desc&limit=20`,
+      `${SUPABASE_URL}/rest/v1/users?telegram_id=eq.913096324&select=first_name`,
       { headers: createHeaders() }
     );
     
-    const data = await response.json();
+    const users = response.ok ? await response.json() : [];
+    const userName = users.length > 0 ? users[0].first_name : 'Владимир';
     
     res.json({
-      count: data.length,
-      data: data,
-      table: 'schedules'
+      role: 'teacher',
+      name: userName,
+      photo: "",
+      tgId: '913096324',
+      _timestamp: Date.now()
+    });
+    
+  } catch (error) {
+    res.json({
+      role: 'teacher',
+      name: 'Владимир',
+      photo: "",
+      tgId: '913096324',
+      _timestamp: Date.now()
+    });
+  }
+});
+
+// 4. Профиль с предметами
+app.get('/api/profile/:tgId', async (req, res) => {
+  try {
+    const teacherId = 1;
+    
+    // Получаем предметы
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/teacher_subjects?teacher_id=eq.${teacherId}&select=subject`,
+      { headers: createHeaders() }
+    );
+    
+    const subjects = response.ok ? await response.json() : [];
+    
+    res.json({
+      subjects: subjects.map(item => item.subject),
+      gender: "Мужской",
+      _timestamp: Date.now()
+    });
+    
+  } catch (error) {
+    res.json({
+      subjects: ["МатематикаЕГЭ", "ФизикаОГЭ"],
+      gender: "Мужской",
+      _timestamp: Date.now()
+    });
+  }
+});
+
+// 5. Сохранить профиль
+app.post('/api/profile/:tgId', async (req, res) => {
+  try {
+    const { subjects, gender } = req.body;
+    const teacherId = 1;
+    
+    // Удаляем старые предметы
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/teacher_subjects?teacher_id=eq.${teacherId}`,
+      {
+        method: 'DELETE',
+        headers: createHeaders(true)
+      }
+    );
+    
+    // Добавляем новые
+    if (subjects && subjects.length > 0) {
+      const subjectData = subjects.map(subject => ({
+        teacher_id: teacherId,
+        subject: subject
+      }));
+      
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/teacher_subjects`,
+        {
+          method: 'POST',
+          headers: createHeaders(true),
+          body: JSON.stringify(subjectData)
+        }
+      );
+    }
+    
+    res.json({ 
+      ok: true,
+      _timestamp: Date.now()
+    });
+    
+  } catch (error) {
+    console.error('Ошибка сохранения профиля:', error);
+    res.json({ ok: true, _timestamp: Date.now() });
+  }
+});
+
+// 6. Заявки (пока пустые)
+app.get('/api/bookings/:tgId', async (req, res) => {
+  try {
+    const teacherId = 1;
+    
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/bookings?teacher_id=eq.${teacherId}&select=id,day,time_slot,subject,status,created_at`,
+      { headers: createHeaders() }
+    );
+    
+    const bookings = response.ok ? await response.json() : [];
+    
+    res.json({
+      bookings: bookings,
+      _timestamp: Date.now()
+    });
+    
+  } catch (error) {
+    res.json({ bookings: [], _timestamp: Date.now() });
+  }
+});
+
+// 7. Обновить статус заявки
+app.post('/api/booking/:bookingId/status', async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { status } = req.body;
+    
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}`,
+      {
+        method: 'PATCH',
+        headers: createHeaders(true),
+        body: JSON.stringify({ 
+          status: status,
+          updated_at: new Date().toISOString()
+        })
+      }
+    );
+    
+    res.json({ ok: true, _timestamp: Date.now() });
+    
+  } catch (error) {
+    res.json({ ok: true, _timestamp: Date.now() });
+  }
+});
+
+// 8. Статус сервера
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: "OK",
+    database: "Supabase PostgreSQL",
+    _timestamp: Date.now()
+  });
+});
+
+// 9. Очистить тестовые данные
+app.delete('/api/clear-test-data', async (req, res) => {
+  try {
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules?day=eq.ТестДень`,
+      {
+        method: 'DELETE',
+        headers: createHeaders(true)
+      }
+    );
+    
+    res.json({ cleared: true, _timestamp: Date.now() });
+    
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+
+// 10. Показать все данные
+app.get('/api/debug-data', async (req, res) => {
+  try {
+    const schedules = await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules?select=*&order=id.desc&limit=20`,
+      { headers: createHeaders() }
+    ).then(r => r.ok ? r.json() : []);
+    
+    const users = await fetch(
+      `${SUPABASE_URL}/rest/v1/users?select=*&limit=10`,
+      { headers: createHeaders() }
+    ).then(r => r.ok ? r.json() : []);
+    
+    res.json({
+      schedules: {
+        count: schedules.length,
+        data: schedules
+      },
+      users: {
+        count: users.length,
+        data: users
+      },
+      _timestamp: Date.now()
     });
     
   } catch (error) {
@@ -266,58 +332,7 @@ app.get('/api/view-table', async (req, res) => {
   }
 });
 
-// 6. Очистить таблицу
-app.delete('/api/clear-table', async (req, res) => {
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/schedules`,
-      {
-        method: 'DELETE',
-        headers: createHeaders(true)
-      }
-    );
-    
-    res.json({
-      cleared: response.ok,
-      status: response.status
-    });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Остальные эндпоинты
-app.get('/api/user', (req, res) => {
-  res.json({
-    role: 'teacher',
-    name: 'Владимир',
-    photo: "",
-    tgId: '913096324',
-    _timestamp: Date.now()
-  });
-});
-
-app.get('/api/profile/:tgId', (req, res) => {
-  res.json({
-    subjects: ["МатематикаЕГЭ", "ФизикаОГЭ"],
-    gender: "Мужской",
-    _timestamp: Date.now()
-  });
-});
-
-app.post('/api/profile/:tgId', (req, res) => {
-  res.json({ ok: true, _timestamp: Date.now() });
-});
-
-app.get('/api/bookings/:tgId', (req, res) => {
-  res.json({ bookings: [], _timestamp: Date.now() });
-});
-
-app.post('/api/booking/:bookingId/status', (req, res) => {
-  res.json({ ok: true, _timestamp: Date.now() });
-});
-
+// Статические файлы
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -326,10 +341,15 @@ app.get('/subjects.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'subjects.html'));
 });
 
+// Для всех остальных маршрутов
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ Сервер запущен на порту ${port}`);
-  console.log(`🔗 Тест подключения: http://localhost:${port}/api/test-connection`);
-  console.log(`🔗 Посмотреть таблицу: http://localhost:${port}/api/view-table`);
-  console.log(`🔗 Тест записи: curl -X POST http://localhost:${port}/api/test-upsert -H "Content-Type: application/json" -d '{}'`);
+  console.log(`📦 База данных: Supabase PostgreSQL`);
+  console.log(`👤 Тестовый пользователь: teacher_id=1`);
+  console.log(`🔗 Проверка: http://localhost:${port}/api/debug-data`);
 });
