@@ -1,4 +1,4 @@
-import { getUser } from '@/lib/redis';
+import { getUser } from '../../../lib/redis';
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
@@ -17,7 +17,6 @@ export async function GET(request) {
       );
     }
     
-    // Ищем пользователя в Redis
     const user = await getUser(telegramId);
     
     if (!user) {
@@ -29,7 +28,6 @@ export async function GET(request) {
       });
     }
     
-    // Возвращаем статус пользователя
     const response = {
       success: true,
       status: user.status || 'unknown',
