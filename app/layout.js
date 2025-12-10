@@ -1,8 +1,6 @@
-// app/layout.js
 import { Inter } from 'next/font/google';
-import './globals.css'; // Если у тебя есть глобальные стили
+import './globals.css';
 
-// Можно использовать любые шрифты
 const inter = Inter({ subsets: ['latin', 'cyrillic'] });
 
 export const metadata = {
