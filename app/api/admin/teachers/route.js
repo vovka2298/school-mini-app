@@ -1,11 +1,10 @@
-import { getAllTeachers, getTeacherStudents } from '@/lib/redis';
+import { getAllTeachers, getTeacherStudents } from '../../../lib/redis';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request) {
   try {
     const teachers = await getAllTeachers();
     
-    // Для каждого учителя получаем количество учеников
     const teachersWithStats = await Promise.all(
       teachers.map(async (teacher) => {
         const students = await getTeacherStudents(teacher.telegramId);
