@@ -1,13 +1,20 @@
 {
   "name": "school-mini-app",
-  "version": "1.0.0",
-  "description": "Кабинет расписания для преподавателей",
+  "version": "2.0.0",
+  "description": "Кабинет расписания для преподавателей с базой данных",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "vercel-build": "npm install"
   },
   "dependencies": {
-    "express": "^4.21.0"
+    "express": "^4.21.0",
+    "@supabase/supabase-js": "^2.39.7",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": "20.x"
