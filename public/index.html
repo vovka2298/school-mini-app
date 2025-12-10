@@ -36,7 +36,7 @@
             border: 3px solid #58a6ff;
             background: #21262d;
             display: flex;
-            align-items: center;
+                align-items: center;
             justify-content: center;
             font-size: 24px;
         }
@@ -276,8 +276,8 @@
 
     <script>
         // ================= КОНФИГУРАЦИЯ =================
-        const SUPABASE_URL = 'https://rtywenfvaoxsjdkulmdk.supabase.co'; // ВАЖНО: БУКВА "l" вместо "1"
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eXd1bmZ2YW94c2pka3UxbWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU2MDQ4MDAsImV4cCI6MjA1MTE4MDgwMH0.gQ99aMJ_sUnOMR4XQm54gOq3MSF6hjePjEn4nyI6mFg';
+        const SUPABASE_URL = 'https://rtywenfvaoxsjdkulmdk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_WhiVd5day72hRoTKiFtiIQ_sP2wu4_S';
         
         // Дни недели для отображения
         const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -341,10 +341,9 @@
                 }
                 
                 console.log('🎯 Использую ID:', tgId);
-                
-                // Пробуем загрузить из Supabase
                 console.log('🌐 Подключаюсь к Supabase:', SUPABASE_URL);
                 
+                // Прямой запрос к Supabase
                 const response = await fetch(
                     `${SUPABASE_URL}/rest/v1/users?telegram_id=eq.${tgId}&select=*`,
                     {
