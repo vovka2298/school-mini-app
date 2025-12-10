@@ -7,7 +7,6 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📅</text></svg>">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    /* === ВСЕ СТИЛИ ИЗ ОРИГИНАЛЬНОГО КОДА === */
     body {
       margin: 0;
       background: #0d1117;
@@ -236,33 +235,9 @@
       text-align: center;
       margin-top: 10px;
     }
-    
-    /* Стили для вкладки учеников и предметов */
-    .list-container {
-      padding: 20px;
-    }
-    
-    .card {
-      background: #161b22;
-      padding: 15px;
-      margin-bottom: 10px;
-      border-radius: 10px;
-      border: 1px solid #30363d;
-    }
-    
-    .card h4 {
-      margin: 0 0 5px 0;
-      color: #58a6ff;
-    }
-    
-    .card p {
-      margin: 3px 0;
-      font-size: 14px;
-    }
   </style>
 </head>
 <body>
-  <!-- === ВЕРХНИЙ БЛОК === -->
   <div class="header">
     <div class="header-top">
       <div class="user-info">
@@ -272,267 +247,247 @@
           <p>Кабинет преподавателя</p>
         </div>
       </div>
-      <button class="refresh-btn" onclick="forceRefresh()">
+      <button class="refresh-btn" id="refreshBtn" onclick="forceRefresh()">
         🔄 Обновить
       </button>
     </div>
     <div id="lastSync"></div>
   </div>
   
-  <!-- === ВКЛАДКИ === -->
   <div class="tabs">
-    <div class="tab active" onclick="showTab('schedule')">Расписание</div>
-    <div class="tab" onclick="showTab('students')">Ученики</div>
-    <div class="tab" onclick="showTab('subjects')">Предметы</div>
+    <div class="tab active" onclick="showSchedule()">Расписание</div>
+    <div class="tab" onclick="showBookings()">Заявки</div>
+    <div class="tab" onclick="showSubjects()">Предметы</div>
   </div>
   
-  <!-- === ЛЕГЕНДА (только для расписания) === -->
-  <div class="legend" id="legend">
+  <div class="legend">
     <div class="legend-item"><div class="legend-box" style="background:#21262d"></div>Не работаю</div>
     <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Свободен</div>
     <div class="legend-item"><div class="legend-box" style="background:#da3633"></div>Занят</div>
   </div>
   
-  <!-- === КОНТЕНТ РАСПИСАНИЯ === -->
-  <div class="content" id="scheduleTab">
-    <div class="week-header" id="weekHeader"></div>
-    <div id="scheduleContainer">
-      <div class="loading">Загрузка расписания...</div>
-    </div>
+  <div class="content" id="content">
+    <div class="loading">Загрузка расписания...</div>
   </div>
-  
-  <!-- === КОНТЕНТ УЧЕНИКОВ === -->
-  <div class="content" id="studentsTab" style="display: none;">
-    <div class="list-container">
-      <h3>👨🎓 Мои ученики</h3>
-      <div id="studentsList">
-        <div class="loading">Загрузка учеников...</div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- === КОНТЕНТ ПРЕДМЕТОВ === -->
-  <div class="content" id="subjectsTab" style="display: none;">
-    <div class="list-container">
-      <h3>📚 Все предметы</h3>
-      <div id="subjectsList">
-        <div class="loading">Загрузка предметов...</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- === УВЕДОМЛЕНИЯ === -->
-  <div id="syncNotice" class="sync-notice" style="display: none;"></div>
-  <div id="cacheNotice" class="cache-notice" style="display: none;"></div>
 
   <script>
-    // ================= КОНФИГУРАЦИЯ =================
-    const SUPABASE_URL = 'https://rtywenfvaoxsjdkulmdk.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_WhiVd5day72hRoTKiFtiIQ_sP2wu4_S';
+    // Telegram Web App
+    if (typeof Telegram !== 'undefined') {
+      Telegram.WebApp.ready();
+      Telegram.WebApp.expand();
+    }
     
-    // Константы как в оригинальном коде
+    // Константы
     const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     const FULL_DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
-    
-    // Генерация временных слотов (8:00 - 22:00 с шагом 30 минут)
     const TIMES = [];
     for (let h = 8; h <= 22; h++) {
       TIMES.push(`${h.toString().padStart(2, '0')}:00`);
       if (h < 22) TIMES.push(`${h.toString().padStart(2, '0')}:30`);
     }
-    
     const TEXTS = ['Не работаю', 'Свободен', 'Занят'];
     
     // Данные
-    let currentUser = null;
-    let currentSchedule = {};
+    let schedule = {};
+    let lastScheduleHash = '';
     let isSaving = false;
+    let lastUpdateTime = 0;
+    const MY_ID = "913096324";
+    const STORAGE_KEY = 'teacher_schedule_v2';
+    const CACHE_TTL = 30000; // 30 секунд
     
-    // ================= ИНИЦИАЛИЗАЦИЯ =================
-    document.addEventListener('DOMContentLoaded', init);
+    // ===== УТИЛИТЫ =====
     
-    async function init() {
-      console.log('🚀 Запуск приложения...');
+    // Генерация хэша расписания
+    function getScheduleHash(sched) {
+      let hash = '';
+      FULL_DAYS.forEach(day => {
+        TIMES.forEach(time => {
+          const state = sched[day]?.[time] || 0;
+          hash += `${day}-${time}:${state}|`;
+        });
+      });
+      return hash;
+    }
+    
+    // Сохранение в кеш
+    function saveToCache(data) {
+      try {
+        const cache = {
+          data: data,
+          timestamp: Date.now(),
+          hash: getScheduleHash(data)
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
+      } catch (e) {
+        console.warn("Не удалось сохранить в кеш:", e);
+      }
+    }
+    
+    // Загрузка из кеша
+    function loadFromCache() {
+      try {
+        const cached = localStorage.getItem(STORAGE_KEY);
+        if (!cached) return null;
+        
+        const cache = JSON.parse(cached);
+        const now = Date.now();
+        
+        if (now - cache.timestamp < CACHE_TTL) {
+          return cache.data;
+        }
+      } catch (e) {
+        console.warn("Ошибка загрузки из кеша:", e);
+      }
+      return null;
+    }
+    
+    // Показать уведомление
+    function showNotice(text, color = '#1f6feb', duration = 2000) {
+      const notice = document.createElement('div');
+      notice.className = 'sync-notice';
+      notice.style.background = color;
+      notice.textContent = text;
+      document.body.appendChild(notice);
       
-      try {
-        // Инициализация Telegram WebApp
-        if (window.Telegram && Telegram.WebApp) {
-          Telegram.WebApp.ready();
-          Telegram.WebApp.expand();
-        }
-        
-        // Загружаем пользователя
-        await loadUser();
-        
-      } catch (error) {
-        console.error('❌ Ошибка инициализации:', error);
-        showError('Ошибка запуска приложения');
-      }
+      setTimeout(() => {
+        notice.style.opacity = '0';
+        notice.style.transform = 'translateY(10px)';
+        setTimeout(() => document.body.removeChild(notice), 300);
+      }, duration);
     }
     
-    // ================= ЗАГРУЗКА ПОЛЬЗОВАТЕЛЯ =================
-    async function loadUser() {
-      try {
-        // Получаем Telegram ID
-        let tgId = '913096324';
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlTgId = urlParams.get('tgId');
-        if (urlTgId) tgId = urlTgId;
-        
-        // Из Telegram WebApp
-        if (window.Telegram && Telegram.WebApp) {
-          const tgUser = Telegram.WebApp.initDataUnsafe?.user;
-          if (tgUser && tgUser.id) {
-            tgId = tgUser.id.toString();
-          }
-        }
-        
-        console.log('🎯 Загружаю пользователя с ID:', tgId);
-        
-        // Запрос к Supabase
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/users?telegram_id=eq.${tgId}&select=*`,
-          {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        
-        if (!response.ok) throw new Error(`Ошибка ${response.status}`);
-        
-        const users = await response.json();
-        
-        if (users && users.length > 0) {
-          currentUser = users[0];
-          document.getElementById('userName').textContent = currentUser.full_name || 'Преподаватель';
-          console.log('✅ Пользователь найден:', currentUser);
-          
-          // Загружаем расписание пользователя
-          await loadSchedule();
-          
-        } else {
-          console.log('⚠️ Пользователь не найден в базе');
-          document.getElementById('userName').textContent = 'Гость';
-          renderSchedule({}); // Показываем пустое расписание
-        }
-        
-      } catch (error) {
-        console.error('❌ Ошибка загрузки пользователя:', error);
-        document.getElementById('userName').textContent = 'Ошибка загрузки';
-      }
+    // Обновить время последней синхронизации
+    function updateLastSyncTime() {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ru-RU', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      document.getElementById('lastSync').textContent = `Последнее обновление: ${timeStr}`;
     }
     
-    // ================= РАСПИСАНИЕ =================
-    async function loadSchedule() {
+    // ===== ОСНОВНЫЕ ФУНКЦИИ =====
+    
+    // Загрузка расписания
+    async function loadSchedule(force = false) {
       try {
-        if (!currentUser) {
-          renderSchedule({});
-          return;
+        const refreshBtn = document.getElementById('refreshBtn');
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = '⏳ Загрузка...';
+        
+        // Если не форсируем и есть кеш - показываем его
+        if (!force) {
+          const cached = loadFromCache();
+          if (cached) {
+            schedule = cached;
+            renderSchedule();
+            showNotice("Данные из кеша", "#ffa500", 1500);
+          }
         }
         
-        console.log('📅 Загружаю расписание для teacher_id:', currentUser.id);
-        
-        // Загружаем расписание из таблицы teacher_schedule
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/teacher_schedule?teacher_id=eq.${currentUser.id}&select=*`,
-          {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
+        // Загружаем с сервера
+        const url = `/api/my-schedule?t=${Date.now()}`;
+        const response = await fetch(url);
         
         if (!response.ok) {
-          // Если таблицы нет или ошибка, создаем пустое расписание
-          console.log('📭 Расписание не найдено, создаю пустое');
-          currentSchedule = {};
-          renderSchedule({});
-          return;
+          throw new Error(`Ошибка ${response.status}`);
         }
         
-        const scheduleData = await response.json();
-        console.log('✅ Данные расписания загружены:', scheduleData.length, 'записей');
+        const data = await response.json();
         
-        // Преобразуем в формат как в оригинальном коде
-        currentSchedule = {};
-        FULL_DAYS.forEach(day => {
-          currentSchedule[day] = {};
-        });
+        // Проверяем изменились ли данные
+        const newHash = getScheduleHash(data);
+        const shouldUpdate = force || newHash !== lastScheduleHash;
         
-        scheduleData.forEach(item => {
-          if (currentSchedule[item.day_name]) {
-            currentSchedule[item.day_name][item.time_slot] = item.status;
+        if (shouldUpdate) {
+          schedule = data;
+          lastScheduleHash = newHash;
+          lastUpdateTime = data._timestamp || Date.now();
+          
+          // Сохраняем в кеш
+          saveToCache(data);
+          
+          // Рендерим
+          renderSchedule();
+          updateLastSyncTime();
+          
+          if (!force) {
+            showNotice("Расписание обновлено");
           }
-        });
-        
-        renderSchedule(currentSchedule);
-        updateLastSyncTime();
+          
+          console.log("✅ Расписание загружено (сервер)");
+        } else {
+          console.log("ℹ️ Данные не изменились");
+        }
         
       } catch (error) {
-        console.error('❌ Ошибка загрузки расписания:', error);
-        // Показываем пустое расписание при ошибке
-        renderSchedule({});
+        console.error("❌ Ошибка загрузки:", error);
+        
+        // Пробуем показать кеш при ошибке
+        const cached = loadFromCache();
+        if (cached && Object.keys(cached).length > 0) {
+          schedule = cached;
+          renderSchedule();
+          showNotice("Оффлайн режим (данные из кеша)", "#ffa500", 3000);
+        } else {
+          document.getElementById('content').innerHTML = `
+            <div class="error">
+              Ошибка загрузки расписания
+              <br>
+              <button onclick="forceRefresh()" style="margin-top: 20px;">Повторить</button>
+            </div>
+          `;
+        }
+      } finally {
+        const refreshBtn = document.getElementById('refreshBtn');
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Обновить';
       }
     }
     
-    // ================= ОТОБРАЖЕНИЕ РАСПИСАНИЯ =================
-    function renderSchedule(schedule) {
-      const container = document.getElementById('scheduleContainer');
-      const weekHeader = document.getElementById('weekHeader');
-      
-      // Если расписание пустое
-      if (Object.keys(schedule).length === 0 || !currentUser) {
-        container.innerHTML = `
+    // Принудительное обновление
+    async function forceRefresh() {
+      showNotice("Принудительное обновление...", "#1f6feb");
+      await loadSchedule(true);
+    }
+    
+    // Рендер расписания
+    function renderSchedule() {
+      if (Object.keys(schedule).length === 0) {
+        document.getElementById('content').innerHTML = `
           <div class="loading">
             Расписание пустое. Нажмите на ячейки, чтобы настроить.
           </div>
         `;
-        weekHeader.innerHTML = '';
         return;
       }
       
-      // Создаем заголовок с днями недели
-      weekHeader.innerHTML = '<div></div>';
-      DAYS.forEach(d => {
-        const dayDiv = document.createElement('div');
-        dayDiv.className = 'day-name';
-        dayDiv.textContent = d;
-        weekHeader.appendChild(dayDiv);
-      });
-      
-      // Создаем строки с временными слотами
-      let html = '';
+      let html = '<div class="week-header"><div></div>';
+      DAYS.forEach(d => html += `<div class="day-name">${d}</div>`);
+      html += '</div>';
       
       TIMES.forEach(time => {
         html += `<div class="time-row"><div class="time-label">${time}</div><div class="slots">`;
-        
         DAYS.forEach((_, i) => {
           const day = FULL_DAYS[i];
           const state = schedule[day]?.[time] || 0;
-          
-          html += `
-            <div class="slot state-${state}" onclick="toggleSlot('${day}', '${time}', this)">
-              <div class="slot-time">${time}</div>
-              <div>${TEXTS[state]}</div>
-            </div>
-          `;
+          html += `<div class="slot state-${state}" onclick="toggleSlot('${day}', '${time}', this)">
+            <div class="slot-time">${time}</div>
+            <div>${TEXTS[state]}</div>
+          </div>`;
         });
-        
         html += '</div></div>';
       });
       
-      container.innerHTML = html;
+      document.getElementById('content').innerHTML = html;
     }
     
-    // ================= ИЗМЕНЕНИЕ СТАТУСА СЛОТА =================
+    // Переключение ячейки
     async function toggleSlot(day, time, element) {
-      if (isSaving || !currentUser) {
-        showNotice("Подождите...", "#ffa500", 1000);
+      if (isSaving) {
+        showNotice("Подождите, идет сохранение...", "#ffa500", 1000);
         return;
       }
       
@@ -540,24 +495,40 @@
       
       try {
         // Локальное обновление
-        if (!currentSchedule[day]) currentSchedule[day] = {};
-        const current = currentSchedule[day][time] || 0;
+        if (!schedule[day]) schedule[day] = {};
+        const current = schedule[day][time] || 0;
         const next = (current + 1) % 3;
-        currentSchedule[day][time] = next;
+        schedule[day][time] = next;
         
         // Мгновенное обновление UI
         element.className = `slot state-${next}`;
         element.querySelector('div:last-child').textContent = TEXTS[next];
         
-        // Сохраняем в Supabase
-        await saveSlotToSupabase(day, time, next);
+        // Сохраняем в кеш сразу
+        saveToCache(schedule);
+        lastScheduleHash = getScheduleHash(schedule);
         
-        showNotice("✅ Изменения сохранены");
-        updateLastSyncTime();
+        // Отложенное сохранение на сервер
+        setTimeout(async () => {
+          try {
+            const response = await fetch(`/api/schedule/${MY_ID}?t=${Date.now()}`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(schedule)
+            });
+            
+            const result = await response.json();
+            if (result.ok) {
+              showNotice("Сохранено", "#238636", 1000);
+              lastUpdateTime = result._timestamp || Date.now();
+              updateLastSyncTime();
+            }
+          } catch (saveError) {
+            console.error("Ошибка сохранения на сервер:", saveError);
+            showNotice("Ошибка сети", "#da3633", 2000);
+          }
+        }, 500); // Задержка 500ms для группировки изменений
         
-      } catch (error) {
-        console.error('❌ Ошибка сохранения:', error);
-        showNotice("❌ Ошибка сохранения", "#da3633", 2000);
       } finally {
         setTimeout(() => {
           isSaving = false;
@@ -565,231 +536,84 @@
       }
     }
     
-    async function saveSlotToSupabase(day, time, status) {
-      // Проверяем существует ли запись
-      const checkResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/teacher_schedule?teacher_id=eq.${currentUser.id}&day_name=eq.${encodeURIComponent(day)}&time_slot=eq.${encodeURIComponent(time)}&select=id`,
-        {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      
-      if (checkResponse.ok) {
-        const existing = await checkResponse.json();
-        
-        if (existing && existing.length > 0) {
-          // Обновляем существующую запись
-          await fetch(
-            `${SUPABASE_URL}/rest/v1/teacher_schedule?id=eq.${existing[0].id}`,
-            {
-              method: 'PATCH',
-              headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ 
-                status: status,
-                updated_at: new Date().toISOString()
-              })
-            }
-          );
-        } else {
-          // Создаем новую запись
-          await fetch(
-            `${SUPABASE_URL}/rest/v1/teacher_schedule`,
-            {
-              method: 'POST',
-              headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                teacher_id: currentUser.id,
-                day_name: day,
-                time_slot: time,
-                status: status
-              })
-            }
-          );
-        }
-      }
+    // Вкладки
+    function showSchedule() {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab')[0].classList.add('active');
+      loadSchedule();
     }
     
-    // ================= УЧЕНИКИ =================
-    async function loadStudents() {
+    function showBookings() {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab')[1].classList.add('active');
+      document.getElementById('content').innerHTML = `
+        <div class="loading">
+          Раздел "Заявки" скоро будет доступен
+        </div>
+      `;
+    }
+    
+    function showSubjects() {
+      window.location.href = '/subjects.html';
+    }
+    
+    // Загружаем пользователя
+    async function loadUser() {
       try {
-        if (!currentUser) {
-          document.getElementById('studentsList').innerHTML = '<p>Пользователь не найден</p>';
-          return;
-        }
-        
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/students?teacher_id=eq.${currentUser.id}&select=*&order=created_at.desc`,
-          {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        
-        if (response.ok) {
-          const students = await response.json();
-          console.log('👨🎓 Ученики загружены:', students.length);
-          
-          const container = document.getElementById('studentsList');
-          if (students.length === 0) {
-            container.innerHTML = '<p>У вас пока нет учеников</p>';
-          } else {
-            let html = '';
-            students.forEach(student => {
-              html += `
-                <div class="card">
-                  <h4>${student.full_name}</h4>
-                  <p>👨‍🏫 Класс: ${student.class}</p>
-                  <p>📚 Предмет: ${student.subject}</p>
-                  <p>📅 Добавлен: ${new Date(student.created_at).toLocaleDateString('ru-RU')}</p>
-                </div>
-              `;
-            });
-            container.innerHTML = html;
-          }
-        }
+        const response = await fetch(`/api/user?t=${Date.now()}`);
+        const user = await response.json();
+        document.getElementById('userName').textContent = user.name || "Владимир";
       } catch (error) {
-        console.error('❌ Ошибка загрузки учеников:', error);
-        document.getElementById('studentsList').innerHTML = '<p class="error">Ошибка загрузки учеников</p>';
+        document.getElementById('userName').textContent = "Владимир";
       }
     }
     
-    // ================= ПРЕДМЕТЫ =================
-    async function loadSubjects() {
-      try {
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/subjects?select=*&order=name.asc`,
-          {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        
-        if (response.ok) {
-          const subjects = await response.json();
-          console.log('📚 Предметы загружены:', subjects.length);
-          
-          const container = document.getElementById('subjectsList');
-          if (subjects.length === 0) {
-            container.innerHTML = '<p>Предметы не найдены</p>';
-          } else {
-            let html = '';
-            subjects.forEach(subject => {
-              html += `
-                <div class="card">
-                  <h4>${subject.name}</h4>
-                  ${subject.description ? `<p>📝 ${subject.description}</p>` : ''}
-                </div>
-              `;
-            });
-            container.innerHTML = html;
-          }
+    // Автоматическая синхронизация
+    function startAutoSync() {
+      // Проверка каждые 60 секунд
+      setInterval(async () => {
+        if (!isSaving && document.visibilityState === 'visible') {
+          console.log("🔄 Автоматическая проверка обновлений");
+          await loadSchedule();
         }
-      } catch (error) {
-        console.error('❌ Ошибка загрузки предметов:', error);
-        document.getElementById('subjectsList').innerHTML = '<p class="error">Ошибка загрузки предметов</p>';
-      }
-    }
-    
-    // ================= ВКЛАДКИ =================
-    function showTab(tabName) {
-      // Обновляем активную вкладку
-      document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-      event.target.classList.add('active');
+      }, 60000);
       
-      // Показываем/скрываем контент
-      document.getElementById('scheduleTab').style.display = 'none';
-      document.getElementById('studentsTab').style.display = 'none';
-      document.getElementById('subjectsTab').style.display = 'none';
-      
-      // Легенда только для расписания
-      document.getElementById('legend').style.display = tabName === 'schedule' ? 'block' : 'none';
-      
-      if (tabName === 'schedule') {
-        document.getElementById('scheduleTab').style.display = 'block';
-        if (currentUser && Object.keys(currentSchedule).length === 0) {
+      // При возвращении на вкладку
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          console.log("📱 Страница активна, проверяем обновления");
           loadSchedule();
         }
-      } 
-      else if (tabName === 'students') {
-        document.getElementById('studentsTab').style.display = 'block';
-        loadStudents();
-      }
-      else if (tabName === 'subjects') {
-        document.getElementById('subjectsTab').style.display = 'block';
-        loadSubjects();
-      }
-    }
-    
-    // ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =================
-    function showNotice(text, color = '#1f6feb', duration = 2000) {
-      const notice = document.getElementById('syncNotice');
-      notice.textContent = text;
-      notice.style.background = color;
-      notice.style.display = 'block';
-      
-      setTimeout(() => {
-        notice.style.display = 'none';
-      }, duration);
-    }
-    
-    function updateLastSyncTime() {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('ru-RU', { 
-        hour: '2-digit', 
-        minute: '2-digit'
       });
-      document.getElementById('lastSync').textContent = `Обновлено: ${timeStr}`;
     }
     
-    function forceRefresh() {
-      console.log('🔄 Принудительное обновление...');
-      if (currentUser) {
-        loadSchedule();
-      }
+    // ===== ЗАПУСК ПРИЛОЖЕНИЯ =====
+    
+    async function init() {
+      console.log("🚀 Запуск приложения...");
+      
+      await loadUser();
+      await loadSchedule(true); // Принудительная загрузка при старте
+      startAutoSync();
+      
+      // Обновляем время каждую минуту
+      setInterval(updateLastSyncTime, 60000);
+      
+      console.log("✅ Приложение запущено");
     }
     
-    function showError(message) {
-      const container = document.getElementById('scheduleContainer');
-      if (container) {
-        container.innerHTML = `
-          <div class="error">
-            <h3>❌ Ошибка</h3>
-            <p>${message}</p>
-            <button onclick="forceRefresh()" style="
-              background: #238636;
-              color: white;
-              border: none;
-              padding: 10px 20px;
-              border-radius: 8px;
-              margin-top: 15px;
-              cursor: pointer;
-            ">Повторить</button>
-          </div>
-        `;
-      }
+    // Запускаем когда страница загружена
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
     }
     
-    // Глобальные функции
+    // Глобальные функции для кнопок
     window.forceRefresh = forceRefresh;
-    window.showTab = showTab;
+    window.showSchedule = showSchedule;
+    window.showBookings = showBookings;
+    window.showSubjects = showSubjects;
     window.toggleSlot = toggleSlot;
   </script>
 </body>
