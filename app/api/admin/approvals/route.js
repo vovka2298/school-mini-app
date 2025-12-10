@@ -1,7 +1,6 @@
-import { getPendingApprovals, updateUserStatus } from '@/lib/redis';
+import { getPendingApprovals, updateUserStatus } from '../../../lib/redis';
 import { NextResponse } from 'next/server';
 
-// GET - получить список ожидающих заявок
 export async function GET(request) {
   try {
     const approvals = await getPendingApprovals();
@@ -21,7 +20,6 @@ export async function GET(request) {
   }
 }
 
-// POST - обновить статус заявки
 export async function POST(request) {
   try {
     const body = await request.json();
