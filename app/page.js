@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
-import AuthChecker from '@/components/AuthChecker';
-import TeacherDashboard from '@/components/TeacherDashboard';
-import ManagerDashboard from '@/components/ManagerDashboard';
+import AuthChecker from './components/AuthChecker';
+import TeacherDashboard from './components/TeacherDashboard';
+import ManagerDashboard from './components/ManagerDashboard';
 
 // Стили для анимации спиннера
 const styles = `
@@ -15,14 +15,12 @@ const styles = `
 
 export default function Home() {
   useEffect(() => {
-    // Инициализируем Telegram Web App
     if (window.Telegram && window.Telegram.WebApp) {
       const tg = window.Telegram.WebApp;
       tg.ready();
-      tg.expand(); // Раскрываем на весь экран
+      tg.expand();
     }
     
-    // Добавляем стили для анимации
     const styleSheet = document.createElement("style");
     styleSheet.innerText = styles;
     document.head.appendChild(styleSheet);
@@ -31,7 +29,6 @@ export default function Home() {
   return (
     <AuthChecker>
       {(userData) => {
-        // В зависимости от роли показываем соответствующий интерфейс
         if (userData.role === 'teacher') {
           return <TeacherDashboard userData={userData} />;
         } else if (userData.role === 'manager') {
