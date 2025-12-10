@@ -1,7 +1,7 @@
 {
   "name": "school-mini-app",
   "version": "1.0.0",
-  "description": "Кабинет расписания для преподавателей",
+  "description": "Кабинет преподавателя - индивидуальное приложение",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
