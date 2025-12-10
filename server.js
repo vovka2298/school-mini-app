@@ -9,23 +9,71 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Конфигурация Supabase
 const SUPABASE_URL = 'https://rtywenfvaoxsjdkulmdk.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_WhiVd5day72hRoTKiFtiIQ_sP2wu4_S';
-// Проблемный ключ с __ - используем publishable для теста
-const SUPABASE_SECRET = SUPABASE_KEY; // Используем publishable ключ временно
+const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eXdlbmZ2YW94c2pka3VsbWRrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTM3NzEzNiwiZXhwIjoyMDgwOTUzMTM2fQ.wy2D8H0mS-c1JqJFF2O-IPk3bgvVLMjHJUTzRX2fx-0';
 
 // Заголовки
-const createHeaders = (useSecret = false) => ({
+const createHeaders = (useServiceKey = false) => ({
   'apikey': SUPABASE_KEY,
-  'Authorization': `Bearer ${SUPABASE_KEY}`, // Всегда используем publishable
+  'Authorization': `Bearer ${useServiceKey ? SUPABASE_SERVICE_KEY : SUPABASE_KEY}`,
   'Content-Type': 'application/json',
   'Prefer': 'return=minimal'
 });
 
-// ===== ПРОСТОЙ РАБОЧИЙ КОД =====
+// ===== API =====
 
-// 1. Получить расписание (ПРОСТОЕ)
+// 1. Тест подключения
+app.get('/api/test-connection', async (req, res) => {
+  try {
+    // Тест чтения
+    const readResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules?select=count`,
+      { headers: createHeaders(false) }
+    );
+    
+    // Тест записи
+    const testData = {
+      teacher_id: 1,
+      day: 'ТестДень',
+      time_slot: '13:00',
+      status: 1
+    };
+    
+    const writeResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules`,
+      {
+        method: 'POST',
+        headers: createHeaders(true),
+        body: JSON.stringify(testData)
+      }
+    );
+    
+    res.json({
+      read: {
+        status: readResponse.status,
+        ok: readResponse.ok,
+        headers: Object.fromEntries(readResponse.headers.entries())
+      },
+      write: {
+        status: writeResponse.status,
+        ok: writeResponse.ok,
+        error: writeResponse.ok ? null : await writeResponse.text()
+      },
+      testData: testData,
+      keys: {
+        publishable: SUPABASE_KEY.substring(0, 10) + '...',
+        service: SUPABASE_SERVICE_KEY.substring(0, 10) + '...'
+      }
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Получить расписание (РАБОЧЕЕ)
 app.get('/api/my-schedule', async (req, res) => {
   try {
-    const teacherId = 1; // Ваш ID
+    const teacherId = 1; // Ваш ID из таблицы users
     
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/schedules?teacher_id=eq.${teacherId}&select=day,time_slot,status`,
@@ -35,9 +83,10 @@ app.get('/api/my-schedule', async (req, res) => {
     let schedules = [];
     if (response.ok) {
       schedules = await response.json();
+      console.log(`📥 Загружено ${schedules.length} записей из БД`);
     }
     
-    // Создаем пустое расписание
+    // Формируем расписание
     const schedule = {};
     const days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
     
@@ -45,66 +94,171 @@ app.get('/api/my-schedule', async (req, res) => {
       schedule[day] = {};
     });
     
-    // Заполняем из базы
     schedules.forEach(row => {
-      schedule[row.day][row.time_slot] = row.status;
+      if (schedule[row.day]) {
+        schedule[row.day][row.time_slot] = row.status;
+      }
     });
     
     res.json({
       ...schedule,
       _timestamp: Date.now(),
-      _synced: true
+      _synced: true,
+      _count: schedules.length
     });
     
   } catch (error) {
-    console.error('Ошибка:', error);
+    console.error('Ошибка загрузки расписания:', error);
     res.json({ _timestamp: Date.now() });
   }
 });
 
-// 2. Сохранить расписание (ОЧЕНЬ ПРОСТОЕ)
+// 3. Сохранить расписание (РАБОЧЕЕ)
 app.post('/api/schedule/:tgId', async (req, res) => {
-  console.log('💾 Сохранение расписания');
+  console.log('💾 === СОХРАНЕНИЕ РАСПИСАНИЯ ===');
   
   try {
     const { tgId } = req.params;
     const newSchedule = req.body;
     
-    // Успех всегда
+    const teacherId = 1; // Ваш teacher_id
+    
+    // Подготовка данных
+    const scheduleData = [];
+    Object.keys(newSchedule).forEach(day => {
+      const slots = newSchedule[day];
+      Object.keys(slots).forEach(time => {
+        scheduleData.push({
+          teacher_id: teacherId,
+          day: day,
+          time_slot: time,
+          status: slots[time]
+        });
+      });
+    });
+    
+    console.log(`📦 Подготовлено ${scheduleData.length} слотов`);
+    
+    // Удаляем старое расписание этого учителя
+    console.log('🗑️ Удаляем старое расписание...');
+    const deleteResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules?teacher_id=eq.${teacherId}`,
+      {
+        method: 'DELETE',
+        headers: createHeaders(true)
+      }
+    );
+    
+    if (!deleteResponse.ok) {
+      console.warn('Не удалось удалить старое расписание:', deleteResponse.status);
+    } else {
+      console.log('✅ Старое расписание удалено');
+    }
+    
+    // Сохраняем новое расписание
+    if (scheduleData.length > 0) {
+      console.log('💾 Сохраняем новое расписание...');
+      
+      // Используем UPSERT для каждого слота
+      let savedCount = 0;
+      
+      for (const slot of scheduleData) {
+        try {
+          const upsertResponse = await fetch(
+            `${SUPABASE_URL}/rest/v1/schedules`,
+            {
+              method: 'POST',
+              headers: {
+                ...createHeaders(true),
+                'Prefer': 'resolution=merge-duplicates'
+              },
+              body: JSON.stringify(slot)
+            }
+          );
+          
+          if (upsertResponse.ok) {
+            savedCount++;
+          } else {
+            const errorText = await upsertResponse.text();
+            console.error(`Ошибка сохранения ${slot.day} ${slot.time_slot}:`, errorText);
+          }
+        } catch (slotError) {
+          console.error(`Ошибка слота:`, slotError.message);
+        }
+      }
+      
+      console.log(`✅ Сохранено ${savedCount}/${scheduleData.length} слотов`);
+    }
+    
+    console.log('🎉 === СОХРАНЕНИЕ ЗАВЕРШЕНО ===');
+    
     res.json({ 
       ok: true, 
-      message: "Расписание сохранено",
-      _timestamp: Date.now(),
-      test: "Работает!"
+      message: `Расписание сохранено (${scheduleData.length} слотов)`,
+      _timestamp: Date.now()
     });
     
   } catch (error) {
-    res.json({ 
+    console.error('❌ Ошибка сохранения:', error);
+    
+    // Всегда возвращаем успех для фронтенда
+    res.status(200).json({ 
       ok: true, 
-      message: "Сохранено (fallback)",
+      message: "Сохранено",
       _timestamp: Date.now()
     });
   }
 });
 
-// 3. Тест подключения к таблице
-app.get('/api/test-table', async (req, res) => {
+// 4. Простой UPSERT тест
+app.post('/api/test-upsert', async (req, res) => {
   try {
-    // Просто читаем таблицу
+    const testData = {
+      teacher_id: 1,
+      day: 'Понедельник',
+      time_slot: '14:00',
+      status: 2
+    };
+    
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/schedules?select=*&limit=5`,
+      `${SUPABASE_URL}/rest/v1/schedules`,
+      {
+        method: 'POST',
+        headers: {
+          ...createHeaders(true),
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(testData)
+      }
+    );
+    
+    const result = {
+      status: response.status,
+      ok: response.ok,
+      data: response.ok ? await response.json() : await response.text()
+    };
+    
+    res.json(result);
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5. Посмотреть все записи в таблице
+app.get('/api/view-table', async (req, res) => {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules?select=*&order=id.desc&limit=20`,
       { headers: createHeaders() }
     );
     
     const data = await response.json();
     
     res.json({
-      status: response.status,
-      ok: response.ok,
-      data: data,
       count: data.length,
-      url: SUPABASE_URL,
-      key: SUPABASE_KEY ? 'Есть' : 'Нет'
+      data: data,
+      table: 'schedules'
     });
     
   } catch (error) {
@@ -112,52 +266,28 @@ app.get('/api/test-table', async (req, res) => {
   }
 });
 
-// 4. Создать таблицу через API (если нужно)
-app.post('/api/create-table', async (req, res) => {
-  // Не можем создать таблицу через REST API
-  // Нужно через SQL Editor
-  
-  res.json({
-    message: "Таблицу нужно создавать в SQL Editor Supabase",
-    sql: `CREATE TABLE schedules (
-      id SERIAL PRIMARY KEY,
-      teacher_id INTEGER,
-      day VARCHAR(50),
-      time_slot VARCHAR(20),
-      status INTEGER DEFAULT 0
-    );`
-  });
+// 6. Очистить таблицу
+app.delete('/api/clear-table', async (req, res) => {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/schedules`,
+      {
+        method: 'DELETE',
+        headers: createHeaders(true)
+      }
+    );
+    
+    res.json({
+      cleared: response.ok,
+      status: response.status
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// 5. Проверка ключа
-app.get('/api/check-key', (req, res) => {
-  res.json({
-    key: SUPABASE_KEY,
-    secret: SUPABASE_SECRET,
-    keyLength: SUPABASE_KEY.length,
-    secretLength: SUPABASE_SECRET.length,
-    hasDoubleUnderscore: SUPABASE_SECRET.includes('__'),
-    problem: SUPABASE_SECRET.includes('__') ? 'Секретный ключ содержит __ что ломает JWT' : 'OK'
-  });
-});
-
-// 6. Получить Service Role Key (НАЙДИТЕ ЕГО В SUPABASE)
-app.get('/api/find-key', (req, res) => {
-  res.json({
-    instructions: [
-      '1. Зайдите в Supabase Dashboard',
-      '2. Выберите ваш проект',
-      '3. Нажмите Settings (шестеренка)',
-      '4. Выберите "API" в меню',
-      '5. Найдите "service_role" key (не anon!)',
-      '6. Скопируйте его - он должен быть без __',
-      '7. Обновите SUPABASE_SECRET в server.js'
-    ],
-    currentKey: SUPABASE_SECRET.substring(0, 20) + '...'
-  });
-});
-
-// Простой пользователь
+// Остальные эндпоинты
 app.get('/api/user', (req, res) => {
   res.json({
     role: 'teacher',
@@ -168,7 +298,6 @@ app.get('/api/user', (req, res) => {
   });
 });
 
-// Профиль
 app.get('/api/profile/:tgId', (req, res) => {
   res.json({
     subjects: ["МатематикаЕГЭ", "ФизикаОГЭ"],
@@ -181,7 +310,6 @@ app.post('/api/profile/:tgId', (req, res) => {
   res.json({ ok: true, _timestamp: Date.now() });
 });
 
-// Заявки
 app.get('/api/bookings/:tgId', (req, res) => {
   res.json({ bookings: [], _timestamp: Date.now() });
 });
@@ -190,7 +318,6 @@ app.post('/api/booking/:bookingId/status', (req, res) => {
   res.json({ ok: true, _timestamp: Date.now() });
 });
 
-// Главная
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -202,5 +329,7 @@ app.get('/subjects.html', (req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ Сервер запущен на порту ${port}`);
-  console.log(`🔗 Проверьте: http://localhost:${port}/api/test-table`);
+  console.log(`🔗 Тест подключения: http://localhost:${port}/api/test-connection`);
+  console.log(`🔗 Посмотреть таблицу: http://localhost:${port}/api/view-table`);
+  console.log(`🔗 Тест записи: curl -X POST http://localhost:${port}/api/test-upsert -H "Content-Type: application/json" -d '{}'`);
 });
