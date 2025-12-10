@@ -1,53 +1,36 @@
-import { getUser } from '../../redis-client.js';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyTelegramWebAppData } from '@/lib/telegram-auth';
 
-export async function GET(request) {
+// Важно: force-dynamic отключает статическую генерацию
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const telegramId = searchParams.get('telegramId');
+    const searchParams = request.nextUrl.searchParams;
+    const initData = searchParams.get('initData');
     
-    if (!telegramId) {
+    if (!initData) {
       return NextResponse.json(
-        { 
-          success: false,
-          error: 'Telegram ID is required',
-          message: 'Не указан ID пользователя'
-        },
+        { authenticated: false, error: 'No initData provided' },
         { status: 400 }
       );
     }
+
+    // Проверяем Telegram Web App данные
+    const isValid = await verifyTelegramWebAppData(initData);
     
-    const user = await getUser(telegramId);
-    
-    if (!user) {
-      return NextResponse.json({
-        success: true,
-        status: 'not_found',
-        message: 'Пользователь не найден. Зарегистрируйтесь через бота.',
-        data: null
-      });
-    }
-    
-    const response = {
-      success: true,
-      status: user.status || 'unknown',
-      role: user.role,
-      fullName: user.fullName,
-      registeredAt: user.registeredAt,
-      approvedAt: user.approvedAt,
-      data: user
-    };
-    
-    return NextResponse.json(response);
+    return NextResponse.json({
+      authenticated: isValid,
+      timestamp: Date.now()
+    });
     
   } catch (error) {
     console.error('Auth check error:', error);
     return NextResponse.json(
       { 
-        success: false,
-        error: 'Internal server error',
-        message: 'Ошибка сервера',
-        details: error.message 
+        authenticated: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     );
