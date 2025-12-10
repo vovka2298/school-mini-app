@@ -30,7 +30,6 @@ async function getRedisSchema() {
   return redisSchema;
 }
 
-// Экспортируем все методы
 export async function getUser(telegramId) {
   const schema = await getRedisSchema();
   return await schema.getUser(telegramId);
