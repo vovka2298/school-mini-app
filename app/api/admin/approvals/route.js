@@ -1,4 +1,4 @@
-import { getPendingApprovals, updateUserStatus } from '../redis-client.js';
+import { getPendingApprovals, updateUserStatus } from '../../redis-client.js';
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
